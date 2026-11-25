@@ -35,6 +35,33 @@ const screens = [
 ];
 
 /* ==========================================
+   MULTI-BILLION DOLLAR LAUNCH OVERLAY
+========================================== */
+
+function setLaunchOverlay(visible, percent = 0, status = "", title = "Initializing Vault") {
+  const overlay = $("vaultLaunchOverlay");
+  const meter = $("launchMeterFill");
+  const statusEl = $("launchStatus");
+  const titleEl = $("launchTitle");
+
+  if (!overlay) return;
+
+  if (!visible) {
+    overlay.classList.add("hidden");
+    if (meter) meter.style.width = "12%";
+    return;
+  }
+
+  overlay.classList.remove("hidden");
+  if (titleEl && title) titleEl.textContent = title;
+  if (statusEl && status) statusEl.textContent = status;
+  if (meter) {
+    const clamped = Math.max(8, Math.min(100, Math.round(percent)));
+    meter.style.width = `${clamped}%`;
+  }
+}
+
+/* ==========================================
    INBUILT WEBSITE UI MODALS & SNACKBAR
 ========================================== */
 
@@ -608,29 +635,39 @@ function calculate() {
 }
 
 /* ==========================================
-   VAULT UNLOCK
+   VAULT UNLOCK & STRICT READINESS GATE
 ========================================== */
 
 async function unlockVault(pin) {
-  $("expression").textContent = "Checking PIN...";
+  $("expression").textContent = "Verifying PIN...";
+  setLaunchOverlay(true, 18, "Verifying PIN with cloud enclave...", "Unlocking Vault");
 
   try {
     await verifyCloudPin(pin);
-    await openVault();
+    setLaunchOverlay(true, 45, "PIN verified. Preparing vault & card previews...", "Preparing Vault");
+
+    currentFolder = null;
+    folderStack = [];
+    populateSettingsAccountInfo();
+
+    await loadVault({
+      onProgress: (pct, msg) => setLaunchOverlay(true, pct, msg, "Preparing Vault"),
+      requireAllCardsReady: true
+    });
+
+    setLaunchOverlay(true, 100, "All cards loaded and verified.", "Vault Ready");
+    await new Promise(resolve => setTimeout(resolve, 480));
+
+    setLaunchOverlay(false);
+    $("expression").textContent = "";
+    showScreen("vaultScreen");
   } catch (error) {
-    $("expression").textContent = error.message || "Incorrect PIN";
+    setLaunchOverlay(false);
+    $("expression").textContent = error?.message || "Vault not ready";
+    showSnackbar(error?.message || "Could not verify all vault cards.", 4200);
     calculatorValue = "";
     updateDisplay();
   }
-}
-
-async function openVault() {
-  currentFolder = null;
-  folderStack = [];
-
-  populateSettingsAccountInfo();
-  showScreen("vaultScreen");
-  await loadVault();
 }
 
 /* ==========================================
@@ -678,7 +715,7 @@ $("addFolderBtn").addEventListener("click", async () => {
 });
 
 /* ==========================================
-   LOAD FOLDERS AND MEDIA CARDS
+   LOAD FOLDERS AND VERIFIED MEDIA CARDS
 ========================================== */
 
 function detectMediaKind(file) {
@@ -703,23 +740,94 @@ function detectMediaKind(file) {
   return "image";
 }
 
-async function getCardMediaUrl(objectPath) {
-  if (!objectPath) return "";
-  const { data, error } = await db.storage
-    .from(BUCKET)
-    .createSignedUrl(objectPath, 3600);
+function loadAndDecodeImage(url, altText) {
+  return new Promise((resolve, reject) => {
+    const img = document.createElement("img");
+    img.className = "gallery-media";
+    img.alt = altText || "Vault image";
+    img.decoding = "async";
 
-  if (error) {
-    throw error;
-  }
-  return data?.signedUrl || "";
+    let done = false;
+    const finishSuccess = () => {
+      if (done) return;
+      done = true;
+      if (typeof img.decode === "function") {
+        img.decode().then(() => resolve(img)).catch(() => resolve(img));
+      } else {
+        resolve(img);
+      }
+    };
+
+    const finishError = () => {
+      if (done) return;
+      done = true;
+      reject(new Error(`Image failed to load: ${altText || "file"}`));
+    };
+
+    img.onload = finishSuccess;
+    img.onerror = finishError;
+    img.src = url;
+
+    if (img.complete && img.naturalWidth > 0) {
+      finishSuccess();
+    }
+  });
 }
 
-async function loadVault() {
+function loadVideoFrame(url) {
+  return new Promise((resolve, reject) => {
+    const vid = document.createElement("video");
+    vid.className = "gallery-media";
+    vid.muted = true;
+    vid.playsInline = true;
+    vid.preload = "metadata";
+
+    let done = false;
+    const finishSuccess = () => {
+      if (done) return;
+      done = true;
+      resolve(vid);
+    };
+
+    const finishError = () => {
+      if (done) return;
+      done = true;
+      reject(new Error("Video preview failed to load."));
+    };
+
+    vid.onloadedmetadata = finishSuccess;
+    vid.onloadeddata = finishSuccess;
+    vid.onerror = finishError;
+    vid.src = `${url}#t=0.1`;
+  });
+}
+
+async function getSignedUrlForFile(file) {
+  if (!file?.object_path) {
+    throw new Error(`Missing storage path for "${file?.file_name || "file"}".`);
+  }
+
+  const { data, error } = await db.storage
+    .from(BUCKET)
+    .createSignedUrl(file.object_path, 3600);
+
+  if (error || !data?.signedUrl) {
+    throw new Error(
+      error?.message || `Unable to sign URL for "${file.file_name}".`
+    );
+  }
+
+  return data.signedUrl;
+}
+
+async function loadVault(options = {}) {
+  const { onProgress = null, requireAllCardsReady = false } = options;
+
   try {
     requireUser();
 
     showMessage("vaultMessage", "Loading your files...");
+    if (onProgress) onProgress(52, "Fetching folders and media index...");
 
     const { data: folders, error: folderError } = await db
       .from("vault_folders")
@@ -751,7 +859,7 @@ async function loadVault() {
       currentFolder ? "Inside folder" : "My files";
 
     const list = $("fileList");
-    list.replaceChildren();
+    const fragment = document.createDocumentFragment();
 
     folderItems.forEach(folder => {
       const item = document.createElement("div");
@@ -794,13 +902,21 @@ async function loadVault() {
 
       actions.append(open, rename, remove);
       item.append(thumb, title, actions);
-      list.append(item);
+      fragment.append(item);
     });
 
-    for (let index = 0; index < fileItems.length; index++) {
+    const totalMedia = fileItems.length;
+    const failedCards = [];
+
+    for (let index = 0; index < totalMedia; index++) {
       const file = fileItems[index];
       const kind = detectMediaKind(file);
       const isVideo = kind === "video";
+
+      const stepPct = 55 + Math.round(((index + 1) / Math.max(1, totalMedia)) * 40);
+      if (onProgress) {
+        onProgress(stepPct, `Rendering card ${index + 1} of ${totalMedia}: ${file.file_name}`);
+      }
 
       const card = document.createElement("div");
       card.className = "media-card";
@@ -828,40 +944,20 @@ async function loadVault() {
         }
       });
 
-      list.append(card);
-
       try {
-        const signedUrl = await getCardMediaUrl(file.object_path);
-        if (!signedUrl || !card.isConnected) continue;
+        const signedUrl = await getSignedUrlForFile(file);
+        const mediaEl = isVideo
+          ? await loadVideoFrame(signedUrl)
+          : await loadAndDecodeImage(signedUrl, file.file_name);
 
-        if (isVideo) {
-          const vid = document.createElement("video");
-          vid.className = "gallery-media";
-          vid.muted = true;
-          vid.playsInline = true;
-          vid.preload = "metadata";
-          vid.onloadedmetadata = () => fallback.remove();
-          vid.onloadeddata = () => fallback.remove();
-          vid.onerror = () => vid.remove();
-          vid.src = `${signedUrl}#t=0.1`;
-          card.prepend(vid);
-        } else {
-          const img = document.createElement("img");
-          img.className = "gallery-media";
-          img.alt = file.file_name;
-          img.decoding = "async";
-          img.onload = () => fallback.remove();
-          img.onerror = () => {
-            img.remove();
-            showMessage("vaultMessage", `Could not load image "${file.file_name}".`);
-          };
-          img.src = signedUrl;
-          card.prepend(img);
-        }
-      } catch (thumbErr) {
-        console.error("Card media load error:", thumbErr);
-        showMessage("vaultMessage", thumbErr?.message || "Failed to load media preview.");
+        fallback.remove();
+        card.prepend(mediaEl);
+      } catch (mediaErr) {
+        console.error("Card render error:", mediaErr);
+        failedCards.push(`${file.file_name}: ${mediaErr?.message || "Failed to load"}`);
       }
+
+      fragment.append(card);
     }
 
     if (!folderItems.length && !fileItems.length) {
@@ -876,12 +972,25 @@ async function loadVault() {
         <div class="font-semibold text-sm text-[var(--text)]">This folder is empty</div>
         <div class="text-xs mt-1">Tap Add Files above to store photos or videos here.</div>
       `;
-      list.append(empty);
+      fragment.append(empty);
     }
 
-    showMessage("vaultMessage", "");
+    if (requireAllCardsReady && failedCards.length > 0) {
+      throw new Error(failedCards[0]);
+    }
+
+    list.replaceChildren(fragment);
+
+    if (failedCards.length > 0) {
+      showMessage("vaultMessage", failedCards.join(" | "));
+    } else {
+      showMessage("vaultMessage", "");
+    }
   } catch (error) {
     showError("vaultMessage", error);
+    if (requireAllCardsReady) {
+      throw error;
+    }
   }
 }
 
@@ -1008,18 +1117,14 @@ async function renderViewerSlide(index) {
   }
 
   try {
-    const { data, error } = await db.storage
-      .from(BUCKET)
-      .createSignedUrl(file.object_path, 300);
-
-    if (error) throw error;
+    const signedUrl = await getSignedUrlForFile(file);
     if (activeViewerIndex !== index || !$("previewDialog")?.open) return;
 
     const kind = detectMediaKind(file);
     const media = document.createElement(
       kind === "video" ? "video" : "img"
     );
-    media.src = data.signedUrl;
+    media.src = signedUrl;
 
     if (media.tagName === "VIDEO") {
       media.controls = true;
