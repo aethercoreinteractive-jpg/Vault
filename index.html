@@ -97,7 +97,6 @@
       }
     }
 
-    /* M3 Surfaces & Typography */
     .m3-eyebrow {
       color: var(--primary);
       font-size: 11px;
@@ -254,10 +253,7 @@
       overflow-wrap: anywhere;
     }
 
-    /* ==========================================
-       1. AUTH SCREEN
-    ========================================== */
-
+    /* 1. AUTH SCREEN */
     .auth-wrapper {
       min-height: 100dvh;
       width: 100%;
@@ -285,10 +281,7 @@
       margin-bottom: 18px;
     }
 
-    /* ==========================================
-       2. PIN SCREEN + KEYPAD
-    ========================================== */
-
+    /* 2. PIN SCREEN + KEYPAD */
     .pin-wrapper {
       min-height: 100dvh;
       width: 100%;
@@ -378,10 +371,7 @@
       font-weight: 600;
     }
 
-    /* ==========================================
-       3. CALCULATOR SCREEN (ANDROID 15 STYLE)
-    ========================================== */
-
+    /* 3. CALCULATOR SCREEN */
     .calc-wrapper {
       min-height: 100dvh;
       width: 100%;
@@ -495,10 +485,7 @@
       background: var(--accent-action-hover);
     }
 
-    /* ==========================================
-       4. PRIVATE VAULT SCREEN
-    ========================================== */
-
+    /* 4. PRIVATE VAULT SCREEN */
     .vault-wrapper {
       width: 100%;
       max-width: 720px;
@@ -701,7 +688,6 @@
       place-items: center;
     }
 
-    /* Vault Navigation Bar */
     .vault-bottom {
       position: fixed;
       bottom: 0;
@@ -748,10 +734,7 @@
       transform: scale(0.97);
     }
 
-    /* ==========================================
-       DIALOGS, MODALS & SNACKBAR (NO NATIVE POPUPS)
-    ========================================== */
-
+    /* DIALOGS, MODALS & SNACKBAR */
     dialog {
       width: calc(100% - 28px);
       max-width: 420px;
@@ -831,7 +814,6 @@
       object-fit: contain;
     }
 
-    /* Material 3 Snackbar */
     .m3-snackbar {
       position: fixed;
       left: 16px;
@@ -1030,7 +1012,10 @@
           inputmode="numeric"
           maxlength="8"
           placeholder="••••"
-          autocomplete="off"
+          autocomplete="one-time-code"
+          autocorrect="off"
+          autocapitalize="off"
+          spellcheck="false"
           aria-label="Enter 4 to 8 digit PIN"
         >
 
@@ -1065,7 +1050,7 @@
   </section>
 
 
-  <!-- 3. CALCULATOR SCREEN (NO SETTINGS ICON) -->
+  <!-- 3. CALCULATOR SCREEN -->
   <section id="calculatorScreen" class="screen hidden">
     <div class="calc-wrapper">
 
@@ -1195,7 +1180,6 @@
 
       </main>
 
-      <!-- SETTINGS & SESSION BAR INSIDE VAULT -->
       <nav class="vault-bottom" aria-label="Vault controls">
         <div class="vault-bottom-inner">
           <button id="settingsBtn" type="button" class="vault-nav-btn">
@@ -1221,7 +1205,7 @@
   </section>
 
 
-  <!-- 5. SETTINGS DIALOG (INSIDE VAULT) -->
+  <!-- 5. SETTINGS DIALOG -->
   <dialog id="settingsDialog">
     <div class="dialog-inner">
       <div class="flex items-center justify-between gap-3 mb-5">
@@ -1270,7 +1254,7 @@
   </dialog>
 
 
-  <!-- FULL-SCREEN FILE PREVIEW DIALOG -->
+  <!-- FILE PREVIEW DIALOG -->
   <dialog id="previewDialog">
     <div class="dialog-inner">
       <div class="flex items-center justify-between gap-3">
@@ -1290,7 +1274,7 @@
   </dialog>
 
 
-  <!-- CUSTOM IN-APP ACTION / CONFIRM / PROMPT MODAL (REPLACES BROWSER POPUPS) -->
+  <!-- INBUILT WEBSITE CONFIRM / PROMPT MODAL -->
   <dialog id="appModalDialog">
     <div class="dialog-inner">
       <div id="appModalEyebrow" class="m3-eyebrow">Action</div>
@@ -1314,7 +1298,7 @@
   </dialog>
 
 
-  <!-- CUSTOM IN-APP SNACKBAR (REPLACES BROWSER ALERT) -->
+  <!-- INBUILT WEBSITE SNACKBAR -->
   <div id="appSnackbar" class="m3-snackbar hidden" role="status" aria-live="polite">
     <span id="appSnackbarText"></span>
     <button id="appSnackbarClose" type="button" class="m3-snackbar-close">Dismiss</button>
