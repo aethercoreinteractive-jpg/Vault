@@ -18,8 +18,6 @@ const $ = id => document.getElementById(id);
 let user = null;
 let currentFolder = null;
 let folderStack = [];
-let currentFolderMedia = [];
-let activeViewerIndex = -1;
 
 let calculatorValue = "";
 let pinMode = "setup";
@@ -217,6 +215,33 @@ function safeFileName(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
+function formatBytes(bytes) {
+  if (typeof bytes !== "number" || Number.isNaN(bytes) || bytes < 0) {
+    return "";
+  }
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const idx = Math.min(
+    units.length - 1,
+    Math.floor(Math.log(bytes) / Math.log(1024))
+  );
+  const value = bytes / Math.pow(1024, idx);
+  return `${value >= 10 || idx === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[idx]}`;
+}
+
+function formatShortType(mimeType, fileName) {
+  if (mimeType?.startsWith("video/")) {
+    const ext = mimeType.split("/")[1]?.toUpperCase();
+    return ext ? `VIDEO · ${ext}` : "VIDEO";
+  }
+  if (mimeType?.startsWith("image/")) {
+    const subtype = mimeType.split("/")[1]?.replace("jpeg", "jpg")?.toUpperCase();
+    return subtype ? `IMAGE · ${subtype}` : "IMAGE";
+  }
+  const fallbackExt = fileName?.split(".").pop()?.toUpperCase();
+  return fallbackExt || "FILE";
+}
+
 function updatePinDots() {
   const dotsContainer = $("pinDots");
   if (!dotsContainer) return;
@@ -262,8 +287,6 @@ function resetClientSessionState() {
   user = null;
   currentFolder = null;
   folderStack = [];
-  currentFolderMedia = [];
-  activeViewerIndex = -1;
   currentPinForChange = "";
   firstPin = "";
   calculatorValue = "";
@@ -274,6 +297,7 @@ function resetClientSessionState() {
 
 /* ==========================================
    CLOUD PIN FUNCTIONS
+   PIN is never saved in localStorage.
 ========================================== */
 
 async function callPinFunction(payload) {
@@ -292,7 +316,9 @@ async function callPinFunction(payload) {
         const body = await response.clone().json();
         serverMessage = body?.error || body?.message || "";
       }
-    } catch (_) {}
+    } catch (_) {
+      // Use the normal Supabase error below.
+    }
 
     throw new Error(
       serverMessage ||
@@ -309,16 +335,25 @@ async function callPinFunction(payload) {
 }
 
 async function checkCloudPin() {
-  const result = await callPinFunction({ action: "status" });
+  const result = await callPinFunction({
+    action: "status"
+  });
+
   return Boolean(result.hasPin);
 }
 
 async function createCloudPin(pin) {
-  return callPinFunction({ action: "setup", pin: String(pin) });
+  return callPinFunction({
+    action: "setup",
+    pin: String(pin)
+  });
 }
 
 async function verifyCloudPin(pin) {
-  return callPinFunction({ action: "verify", pin: String(pin) });
+  return callPinFunction({
+    action: "verify",
+    pin: String(pin)
+  });
 }
 
 async function changeCloudPin(oldPin, newPin) {
@@ -344,13 +379,16 @@ function showPinSetup(mode = "setup") {
 
   if (mode === "verifyCurrent") {
     $("pinTitle").textContent = "Verify current PIN";
-    $("pinDescription").textContent = "Enter your existing calculator PIN";
+    $("pinDescription").textContent =
+      "Enter your existing calculator PIN";
   } else if (mode === "change") {
     $("pinTitle").textContent = "Create new PIN";
-    $("pinDescription").textContent = "Choose your new 4–8 digit PIN";
+    $("pinDescription").textContent =
+      "Choose your new 4–8 digit PIN";
   } else {
     $("pinTitle").textContent = "Create your PIN";
-    $("pinDescription").textContent = "Choose your private calculator PIN";
+    $("pinDescription").textContent =
+      "Choose your private calculator PIN";
   }
 
   showMessage("pinMessage", "");
@@ -359,8 +397,10 @@ function showPinSetup(mode = "setup") {
 
 function showCalculator() {
   calculatorValue = "";
+
   $("display").textContent = "0";
   $("expression").textContent = "";
+
   showScreen("calculatorScreen");
 }
 
@@ -383,14 +423,21 @@ $("signupBtn").addEventListener("click", async () => {
   $("signupBtn").disabled = true;
 
   try {
-    const { data, error } = await db.auth.signUp({ email, password });
+    const { data, error } = await db.auth.signUp({
+      email,
+      password
+    });
+
     if (error) throw error;
 
     if (data.session) {
       user = data.user;
       await afterLogin();
     } else {
-      showMessage("authMessage", "Account created. Sign in to continue.");
+      showMessage(
+        "authMessage",
+        "Account created. Sign in to continue."
+      );
     }
   } catch (error) {
     showError("authMessage", error);
@@ -404,14 +451,21 @@ $("loginBtn").addEventListener("click", async () => {
   const password = $("accountPassword").value;
 
   if (!email || !password) {
-    return showMessage("authMessage", "Enter your email and password.");
+    return showMessage(
+      "authMessage",
+      "Enter your email and password."
+    );
   }
 
   showMessage("authMessage", "Signing in...");
   $("loginBtn").disabled = true;
 
   try {
-    const { data, error } = await db.auth.signInWithPassword({ email, password });
+    const { data, error } = await db.auth.signInWithPassword({
+      email,
+      password
+    });
+
     if (error) throw error;
 
     user = data.user;
@@ -426,9 +480,11 @@ $("loginBtn").addEventListener("click", async () => {
 async function afterLogin() {
   try {
     requireUser();
+
     showMessage("authMessage", "Checking your secure PIN...");
 
     const hasPin = await checkCloudPin();
+
     if (hasPin) {
       showCalculator();
     } else {
@@ -445,7 +501,8 @@ async function afterLogin() {
 ========================================== */
 
 $("pinInput").addEventListener("input", () => {
-  $("pinInput").value = $("pinInput").value.replace(/\D/g, "").slice(0, 8);
+  $("pinInput").value =
+    $("pinInput").value.replace(/\D/g, "").slice(0, 8);
   updatePinDots();
 });
 
@@ -478,7 +535,10 @@ $("pinContinue").addEventListener("click", async () => {
   const pin = $("pinInput").value;
 
   if (!/^\d{4,8}$/.test(pin)) {
-    return showMessage("pinMessage", "PIN must contain 4 to 8 digits.");
+    return showMessage(
+      "pinMessage",
+      "PIN must contain 4 to 8 digits."
+    );
   }
 
   $("pinContinue").disabled = true;
@@ -487,6 +547,7 @@ $("pinContinue").addEventListener("click", async () => {
   try {
     if (pinMode === "verifyCurrent") {
       await verifyCloudPin(pin);
+
       currentPinForChange = pin;
       showPinSetup("change");
       return;
@@ -499,7 +560,9 @@ $("pinContinue").addEventListener("click", async () => {
       $("pinInput").value = "";
       updatePinDots();
       $("pinTitle").textContent = "Confirm your PIN";
-      $("pinDescription").textContent = "Enter the same PIN again";
+      $("pinDescription").textContent =
+        "Enter the same PIN again";
+
       showMessage("pinMessage", "");
       return;
     }
@@ -511,10 +574,13 @@ $("pinContinue").addEventListener("click", async () => {
         updatePinDots();
 
         pinMode = currentPinForChange ? "change" : "setup";
+
         $("pinTitle").textContent =
           currentPinForChange ? "Create new PIN" : "Create your PIN";
+
         $("pinDescription").textContent =
           "The PINs did not match. Try again.";
+
         showMessage("pinMessage", "The PINs do not match.");
         return;
       }
@@ -566,8 +632,10 @@ document.querySelectorAll(".key").forEach(button => {
     if (action === "equals") {
       if (/^\d{4,8}$/.test(calculatorValue)) {
         const enteredPin = calculatorValue;
+
         calculatorValue = "";
         updateDisplay();
+
         await unlockVault(enteredPin);
         return;
       }
@@ -593,12 +661,19 @@ function calculate() {
 
     const result = math.evaluate(calculatorValue);
 
-    if (typeof result !== "number" || !Number.isFinite(result)) {
+    if (
+      typeof result !== "number" ||
+      !Number.isFinite(result)
+    ) {
       throw new Error("Invalid result");
     }
 
     $("expression").textContent = calculatorValue;
-    calculatorValue = String(Number(result.toPrecision(12)));
+
+    calculatorValue = String(
+      Number(result.toPrecision(12))
+    );
+
     updateDisplay();
   } catch {
     $("expression").textContent = "Error";
@@ -618,7 +693,9 @@ async function unlockVault(pin) {
     await verifyCloudPin(pin);
     await openVault();
   } catch (error) {
-    $("expression").textContent = error.message || "Incorrect PIN";
+    $("expression").textContent =
+      error.message || "Incorrect PIN";
+
     calculatorValue = "";
     updateDisplay();
   }
@@ -678,7 +755,7 @@ $("addFolderBtn").addEventListener("click", async () => {
 });
 
 /* ==========================================
-   LOAD FOLDERS AND GALLERY MEDIA
+   LOAD FOLDERS AND FILES
 ========================================== */
 
 async function loadVault() {
@@ -711,8 +788,6 @@ async function loadVault() {
       file => file.folder_id === currentFolder
     );
 
-    currentFolderMedia = fileItems;
-
     $("folderPath").textContent =
       currentFolder ? "Inside folder" : "My files";
 
@@ -721,23 +796,23 @@ async function loadVault() {
 
     folderItems.forEach(folder => {
       const item = document.createElement("div");
-      item.className = "folder-card";
+      item.className = "file-item";
 
-      const thumb = document.createElement("div");
-      thumb.className = "folder-thumb";
-      thumb.textContent = "📁";
-      thumb.addEventListener("click", async () => {
-        folderStack.push(currentFolder);
-        currentFolder = folder.id;
-        await loadVault();
-      });
+      const icon = document.createElement("div");
+      icon.className = "file-icon";
+      icon.textContent = "📁";
 
-      const title = document.createElement("div");
-      title.className = "folder-title";
-      title.textContent = folder.name;
+      const info = document.createElement("div");
+      info.className = "file-info";
+      info.textContent = folder.name;
+
+      const meta = document.createElement("div");
+      meta.className = "file-meta";
+      meta.textContent = "FOLDER";
+      info.append(meta);
 
       const actions = document.createElement("div");
-      actions.className = "folder-actions";
+      actions.className = "file-actions";
 
       const open = document.createElement("button");
       open.type = "button";
@@ -759,74 +834,89 @@ async function loadVault() {
       remove.addEventListener("click", () => deleteFolder(folder));
 
       actions.append(open, rename, remove);
-      item.append(thumb, title, actions);
+      item.append(icon, info, actions);
       list.append(item);
     });
 
-    fileItems.forEach((file, index) => {
-      const tile = document.createElement("div");
-      tile.className = "gallery-tile";
-      tile.setAttribute("role", "button");
-      tile.setAttribute("tabindex", "0");
-      tile.setAttribute("aria-label", file.file_name);
+    fileItems.forEach(file => {
+      const item = document.createElement("div");
+      item.className = "file-item";
 
       const isVideo = file.mime_type?.startsWith("video/");
       const isImage = file.mime_type?.startsWith("image/");
 
-      const fallback = document.createElement("span");
-      fallback.className = "gallery-placeholder";
-      fallback.textContent = isVideo ? "🎬" : "🖼️";
-      tile.append(fallback);
+      const icon = document.createElement("div");
+      icon.className = "file-icon";
 
-      if (file.object_path) {
+      if (isImage && file.object_path) {
+        const fallbackGlyph = document.createElement("span");
+        fallbackGlyph.textContent = "🖼️";
+        icon.append(fallbackGlyph);
+
+        const thumb = document.createElement("img");
+        thumb.className = "file-thumb";
+        thumb.alt = file.file_name;
+        thumb.loading = "lazy";
+        thumb.style.display = "none";
+
         db.storage
           .from(BUCKET)
           .createSignedUrl(file.object_path, 300)
           .then(({ data, error }) => {
-            if (!error && data?.signedUrl && tile.isConnected) {
-              if (isImage) {
-                const img = document.createElement("img");
-                img.className = "gallery-media";
-                img.alt = file.file_name;
-                img.loading = "lazy";
-                img.src = data.signedUrl;
-                img.onload = () => {
-                  fallback.remove();
-                  tile.prepend(img);
-                };
-              } else if (isVideo) {
-                const vid = document.createElement("video");
-                vid.className = "gallery-media";
-                vid.src = data.signedUrl;
-                vid.muted = true;
-                vid.playsInline = true;
-                vid.preload = "metadata";
-                vid.onloadeddata = () => {
-                  fallback.remove();
-                  tile.prepend(vid);
-                };
-              }
+            if (!error && data?.signedUrl && thumb.isConnected) {
+              thumb.src = data.signedUrl;
+              thumb.onload = () => {
+                fallbackGlyph.style.display = "none";
+                thumb.style.display = "block";
+              };
             }
           })
           .catch(() => {});
+
+        icon.append(thumb);
+      } else {
+        icon.textContent = isVideo ? "🎬" : "📄";
       }
 
-      if (isVideo) {
-        const badge = document.createElement("span");
-        badge.className = "gallery-video-pill";
-        badge.textContent = "▶";
-        tile.append(badge);
-      }
+      const badge = document.createElement("span");
+      badge.className = "file-badge";
+      badge.textContent = isVideo ? "VIDEO" : "IMAGE";
+      icon.append(badge);
 
-      tile.addEventListener("click", () => openViewerAtIndex(index));
-      tile.addEventListener("keydown", e => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          openViewerAtIndex(index);
-        }
-      });
+      const info = document.createElement("div");
+      info.className = "file-info";
+      info.textContent = file.file_name;
 
-      list.append(tile);
+      const metaParts = [formatShortType(file.mime_type, file.file_name)];
+      const formattedSize = formatBytes(file.size_bytes);
+      if (formattedSize) metaParts.push(formattedSize);
+
+      const meta = document.createElement("div");
+      meta.className = "file-meta";
+      meta.textContent = metaParts.join(" · ");
+      info.append(meta);
+
+      const actions = document.createElement("div");
+      actions.className = "file-actions";
+
+      const preview = document.createElement("button");
+      preview.type = "button";
+      preview.textContent = "View";
+      preview.addEventListener("click", () => previewFile(file));
+
+      const rename = document.createElement("button");
+      rename.type = "button";
+      rename.textContent = "Rename";
+      rename.addEventListener("click", () => renameFile(file));
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "Delete";
+      remove.addEventListener("click", () => deleteFile(file));
+
+      actions.append(preview, rename, remove);
+      item.append(icon, info, actions);
+      list.append(item);
     });
 
     if (!folderItems.length && !fileItems.length) {
@@ -842,9 +932,10 @@ async function loadVault() {
         <div class="text-xs mt-1">Tap Add Files above to store photos or videos here.</div>
       `;
       list.append(empty);
+      showMessage("vaultMessage", "");
+    } else {
+      showMessage("vaultMessage", "");
     }
-
-    showMessage("vaultMessage", "");
   } catch (error) {
     showError("vaultMessage", error);
   }
@@ -867,7 +958,11 @@ $("fileInput").addEventListener("change", async event => {
     requireUser();
 
     showMessage("vaultMessage", "");
-    setUploadProgress(true, 5, `Preparing ${selectedFiles.length} file(s)...`);
+    setUploadProgress(
+      true,
+      5,
+      `Preparing ${selectedFiles.length} file(s)...`
+    );
 
     let uploadedCount = 0;
     const failedFiles = [];
@@ -882,12 +977,16 @@ $("fileInput").addEventListener("change", async event => {
         `Uploading (${i + 1}/${selectedFiles.length}): ${file.name}`
       );
 
-      if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
+      if (
+        !file.type.startsWith("image/") &&
+        !file.type.startsWith("video/")
+      ) {
         failedFiles.push(`${file.name}: Unsupported file type`);
         continue;
       }
 
-      const objectPath = `${user.id}/${crypto.randomUUID()}_${safeFileName(file.name)}`;
+      const objectPath =
+        `${user.id}/${crypto.randomUUID()}_${safeFileName(file.name)}`;
 
       const { error: uploadError } = await db.storage
         .from(BUCKET)
@@ -901,7 +1000,11 @@ $("fileInput").addEventListener("change", async event => {
         continue;
       }
 
-      setUploadProgress(true, basePercent + 65, `Saving record: ${file.name}`);
+      setUploadProgress(
+        true,
+        basePercent + 65,
+        `Saving record: ${file.name}`
+      );
 
       const { error: databaseError } = await db
         .from("vault_files")
@@ -929,10 +1032,14 @@ $("fileInput").addEventListener("change", async event => {
     }
 
     event.target.value = "";
+
     await loadVault();
 
     if (failedFiles.length) {
-      showMessage("vaultMessage", `${uploadedCount} uploaded. ${failedFiles.join(" | ")}`);
+      showMessage(
+        "vaultMessage",
+        `${uploadedCount} uploaded. ${failedFiles.join(" | ")}`
+      );
     } else {
       showSnackbar(`${uploadedCount} file(s) uploaded successfully.`);
     }
@@ -944,191 +1051,70 @@ $("fileInput").addEventListener("change", async event => {
 });
 
 /* ==========================================
-   FULL-SCREEN GALLERY VIEWER & FOLDER SWIPE
+   FILE PREVIEW
 ========================================== */
 
-function pauseActiveViewerVideo() {
-  const video = $("viewerSlide")?.querySelector("video");
-  if (video) video.pause();
-}
-
-async function renderViewerSlide(index) {
-  const slide = $("viewerSlide");
-  const counter = $("viewerCounter");
-  if (!slide) return;
-
-  pauseActiveViewerVideo();
-  slide.style.transition = "none";
-  slide.style.transform = "translateX(0px)";
-  slide.style.opacity = "1";
-  slide.replaceChildren();
-
-  const file = currentFolderMedia[index];
-  if (!file) return;
-
-  if (counter) {
-    counter.textContent = currentFolderMedia.length > 1
-      ? `${index + 1} / ${currentFolderMedia.length}`
-      : "";
-  }
-
+async function previewFile(file) {
   try {
     const { data, error } = await db.storage
       .from(BUCKET)
       .createSignedUrl(file.object_path, 300);
 
     if (error) throw error;
-    if (activeViewerIndex !== index || !$("previewDialog")?.open) return;
+
+    $("previewName").textContent = file.file_name;
+
+    if ($("previewMeta")) {
+      const parts = [formatShortType(file.mime_type, file.file_name)];
+      const sizeStr = formatBytes(file.size_bytes);
+      if (sizeStr) parts.push(sizeStr);
+      $("previewMeta").textContent = parts.join(" · ");
+    }
+
+    const content = $("previewContent");
+    content.replaceChildren();
 
     const media = document.createElement(
       file.mime_type?.startsWith("video/") ? "video" : "img"
     );
+
     media.src = data.signedUrl;
 
     if (media.tagName === "VIDEO") {
       media.controls = true;
       media.playsInline = true;
+      media.autoplay = true;
     } else {
       media.alt = file.file_name;
-      media.draggable = false;
     }
 
-    slide.append(media);
+    content.append(media);
+    $("previewDialog").showModal();
   } catch (error) {
     showError("vaultMessage", error);
   }
 }
 
-async function openViewerAtIndex(index) {
-  if (index < 0 || index >= currentFolderMedia.length) return;
-  activeViewerIndex = index;
-
-  const dialog = $("previewDialog");
-  if (!dialog.open) {
-    dialog.showModal();
-  }
-  await renderViewerSlide(activeViewerIndex);
-}
-
-async function swipeViewerBy(delta) {
-  const nextIndex = activeViewerIndex + delta;
-  const slide = $("viewerSlide");
-
-  if (nextIndex < 0 || nextIndex >= currentFolderMedia.length) {
-    if (slide) {
-      slide.style.transition = "transform 0.18s ease";
-      slide.style.transform = "translateX(0px)";
-    }
-    return;
-  }
-
-  if (slide) {
-    slide.style.transition = "transform 0.16s ease, opacity 0.16s ease";
-    slide.style.transform = `translateX(${delta > 0 ? "-36px" : "36px"})`;
-    slide.style.opacity = "0.25";
-  }
-
-  setTimeout(async () => {
-    activeViewerIndex = nextIndex;
-    await renderViewerSlide(activeViewerIndex);
-  }, 110);
-}
-
-function setupViewerSwipe() {
-  const stage = $("viewerStage");
-  const slide = $("viewerSlide");
-  if (!stage || !slide) return;
-
-  let startX = 0;
-  let startY = 0;
-  let currentDx = 0;
-  let isTracking = false;
-  let isHorizontalSwipe = false;
-
-  stage.addEventListener("touchstart", e => {
-    if (e.touches.length !== 1) return;
-    startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
-    currentDx = 0;
-    isTracking = true;
-    isHorizontalSwipe = false;
-    slide.style.transition = "none";
-  }, { passive: true });
-
-  stage.addEventListener("touchmove", e => {
-    if (!isTracking || e.touches.length !== 1) return;
-    const dx = e.touches[0].clientX - startX;
-    const dy = e.touches[0].clientY - startY;
-
-    if (!isHorizontalSwipe) {
-      if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
-        isHorizontalSwipe = true;
-      } else if (Math.abs(dy) > 12) {
-        isTracking = false;
-        return;
-      }
-    }
-
-    if (isHorizontalSwipe) {
-      currentDx = dx;
-      const atStart = activeViewerIndex <= 0 && currentDx > 0;
-      const atEnd = activeViewerIndex >= currentFolderMedia.length - 1 && currentDx < 0;
-      const dampedDx = (atStart || atEnd) ? currentDx * 0.25 : currentDx;
-      slide.style.transform = `translateX(${dampedDx}px)`;
-    }
-  }, { passive: true });
-
-  stage.addEventListener("touchend", async () => {
-    if (!isTracking) return;
-    isTracking = false;
-
-    if (!isHorizontalSwipe) {
-      slide.style.transition = "transform 0.18s ease";
-      slide.style.transform = "translateX(0px)";
-      return;
-    }
-
-    const threshold = 64;
-    if (currentDx <= -threshold) {
-      await swipeViewerBy(1);
-    } else if (currentDx >= threshold) {
-      await swipeViewerBy(-1);
-    } else {
-      slide.style.transition = "transform 0.18s ease";
-      slide.style.transform = "translateX(0px)";
-    }
-    currentDx = 0;
-  });
-}
-
-setupViewerSwipe();
-
 $("closePreviewBtn").addEventListener("click", () => {
-  pauseActiveViewerVideo();
-  activeViewerIndex = -1;
+  const video = $("previewContent")?.querySelector("video");
+  if (video) video.pause();
   $("previewDialog").close();
-  $("viewerSlide").replaceChildren();
+  $("previewContent").replaceChildren();
 });
 
-$("viewerRenameBtn").addEventListener("click", async () => {
-  const file = currentFolderMedia[activeViewerIndex];
-  if (!file) return;
-  await renameFile(file, true);
-});
-
-$("viewerDeleteBtn").addEventListener("click", async () => {
-  const file = currentFolderMedia[activeViewerIndex];
-  if (!file) return;
-  await deleteFile(file, true);
+$("previewDialog")?.addEventListener("click", e => {
+  if (e.target === $("previewDialog")) {
+    $("closePreviewBtn").click();
+  }
 });
 
 /* ==========================================
-   RENAME & DELETE FILE
+   RENAME FILE
 ========================================== */
 
-async function renameFile(file, keepViewerOpen = false) {
+async function renameFile(file) {
   const newName = await showPromptModal({
-    eyebrow: "Rename Media",
+    eyebrow: "Rename File",
     title: "Rename file",
     defaultValue: file.file_name,
     placeholder: "File name",
@@ -1147,16 +1133,17 @@ async function renameFile(file, keepViewerOpen = false) {
     if (error) throw error;
 
     await loadVault();
-    if (keepViewerOpen && activeViewerIndex >= 0) {
-      await renderViewerSlide(activeViewerIndex);
-    }
-    showSnackbar("Renamed.");
+    showSnackbar("File renamed.");
   } catch (error) {
     showError("vaultMessage", error);
   }
 }
 
-async function deleteFile(file, fromViewer = false) {
+/* ==========================================
+   DELETE FILE
+========================================== */
+
+async function deleteFile(file) {
   const confirmed = await showConfirmModal({
     eyebrow: "Permanent Action",
     title: "Delete file?",
@@ -1183,24 +1170,14 @@ async function deleteFile(file, fromViewer = false) {
     if (error) throw error;
 
     await loadVault();
-
-    if (fromViewer) {
-      if (currentFolderMedia.length === 0) {
-        $("closePreviewBtn").click();
-      } else {
-        const nextIdx = Math.min(activeViewerIndex, currentFolderMedia.length - 1);
-        await openViewerAtIndex(nextIdx);
-      }
-    }
-
-    showSnackbar("Deleted.");
+    showSnackbar("File deleted.");
   } catch (error) {
     showError("vaultMessage", error);
   }
 }
 
 /* ==========================================
-   RENAME & DELETE FOLDER
+   RENAME FOLDER
 ========================================== */
 
 async function renameFolder(folder) {
@@ -1229,6 +1206,10 @@ async function renameFolder(folder) {
     showError("vaultMessage", error);
   }
 }
+
+/* ==========================================
+   DELETE EMPTY FOLDER
+========================================== */
 
 async function deleteFolder(folder) {
   try {
@@ -1317,6 +1298,7 @@ async function handleSignOut() {
 
   try {
     const { error } = await db.auth.signOut();
+
     if (error) throw error;
 
     resetClientSessionState();
@@ -1346,6 +1328,7 @@ async function handleDeleteAccount() {
 
     showSnackbar("Deleting all files, folders, and account data...", 8000);
 
+    // 1. Fetch all file records for this user to purge storage objects
     const { data: userFiles, error: fetchFilesError } = await db
       .from("vault_files")
       .select("id, object_path")
@@ -1353,6 +1336,7 @@ async function handleDeleteAccount() {
 
     if (fetchFilesError) throw fetchFilesError;
 
+    // 2. Remove every file from Supabase Storage ("vault-files")
     const pathsToRemove = (userFiles || [])
       .map(f => f.object_path)
       .filter(Boolean);
@@ -1365,6 +1349,7 @@ async function handleDeleteAccount() {
       if (storageRemoveError) throw storageRemoveError;
     }
 
+    // Also list any orphaned objects under userId/ folder in storage
     const { data: listedObjects } = await db.storage
       .from(BUCKET)
       .list(targetUserId, { limit: 1000 });
@@ -1378,6 +1363,7 @@ async function handleDeleteAccount() {
       }
     }
 
+    // 3. Delete all file rows in "vault_files"
     const { error: deleteFilesError } = await db
       .from("vault_files")
       .delete()
@@ -1385,6 +1371,7 @@ async function handleDeleteAccount() {
 
     if (deleteFilesError) throw deleteFilesError;
 
+    // 4. Delete all folder rows in "vault_folders" (child folders first, then root)
     let remainingFolders = true;
     let safetyPasses = 0;
     while (remainingFolders && safetyPasses < 20) {
@@ -1419,14 +1406,21 @@ async function handleDeleteAccount() {
       if (delFolderErr) throw delFolderErr;
     }
 
+    // 5. Attempt cloud PIN cleanup via Edge Function if supported
     try {
       await callPinFunction({ action: "delete" });
-    } catch (_) {}
+    } catch (_) {
+      // Ignore if Edge Function only exposes status/setup/verify/change
+    }
 
+    // 6. Attempt auth user deletion RPC if configured on Supabase
     try {
       await db.rpc("delete_user");
-    } catch (_) {}
+    } catch (_) {
+      // Proceed to sign out even if RPC is not deployed
+    }
 
+    // 7. Sign out and return to Sign In screen
     await db.auth.signOut();
     resetClientSessionState();
     showScreen("authScreen");
@@ -1448,6 +1442,7 @@ $("deleteAccountBtn").addEventListener("click", handleDeleteAccount);
 async function startApp() {
   try {
     const { data, error } = await db.auth.getSession();
+
     if (error) throw error;
 
     user = data.session?.user || null;
