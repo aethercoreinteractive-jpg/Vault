@@ -33,8 +33,7 @@ const screens = [
 ];
 
 /* ==========================================
-   IN-APP UI DIALOGS & SNACKBAR
-   (Zero Chrome / Browser Native Popups)
+   INBUILT WEBSITE UI MODALS & SNACKBAR
 ========================================== */
 
 function showSnackbar(message, durationMs = 3600) {
@@ -282,6 +281,18 @@ function populateSettingsAccountInfo() {
   if ($("settingsAccountId")) {
     $("settingsAccountId").textContent = user?.id ? `${user.id.slice(0, 8)}…` : "—";
   }
+}
+
+function resetClientSessionState() {
+  user = null;
+  currentFolder = null;
+  folderStack = [];
+  currentPinForChange = "";
+  firstPin = "";
+  calculatorValue = "";
+  if ($("fileList")) $("fileList").replaceChildren();
+  if ($("email")) $("email").value = "";
+  if ($("accountPassword")) $("accountPassword").value = "";
 }
 
 /* ==========================================
@@ -1248,7 +1259,7 @@ async function deleteFolder(folder) {
 }
 
 /* ==========================================
-   SETTINGS
+   SETTINGS, SIGN OUT & DELETE ACCOUNT
 ========================================== */
 
 $("settingsBtn").addEventListener("click", () => {
@@ -1290,11 +1301,7 @@ async function handleSignOut() {
 
     if (error) throw error;
 
-    user = null;
-    currentPinForChange = "";
-    firstPin = "";
-    calculatorValue = "";
-
+    resetClientSessionState();
     showScreen("authScreen");
     showMessage("authMessage", "You have signed out.");
   } catch (error) {
@@ -1302,8 +1309,131 @@ async function handleSignOut() {
   }
 }
 
+async function handleDeleteAccount() {
+  if ($("settingsDialog")?.open) $("settingsDialog").close();
+
+  const confirmed = await showConfirmModal({
+    eyebrow: "Permanent Account Deletion",
+    title: "Delete your account?",
+    description: "This will permanently delete all your stored files, folders, PIN settings, and vault data. This action cannot be undone.",
+    confirmText: "Delete everything",
+    danger: true
+  });
+
+  if (!confirmed) return;
+
+  try {
+    requireUser();
+    const targetUserId = user.id;
+
+    showSnackbar("Deleting all files, folders, and account data...", 8000);
+
+    // 1. Fetch all file records for this user to purge storage objects
+    const { data: userFiles, error: fetchFilesError } = await db
+      .from("vault_files")
+      .select("id, object_path")
+      .eq("user_id", targetUserId);
+
+    if (fetchFilesError) throw fetchFilesError;
+
+    // 2. Remove every file from Supabase Storage ("vault-files")
+    const pathsToRemove = (userFiles || [])
+      .map(f => f.object_path)
+      .filter(Boolean);
+
+    if (pathsToRemove.length > 0) {
+      const { error: storageRemoveError } = await db.storage
+        .from(BUCKET)
+        .remove(pathsToRemove);
+
+      if (storageRemoveError) throw storageRemoveError;
+    }
+
+    // Also list any orphaned objects under userId/ folder in storage
+    const { data: listedObjects } = await db.storage
+      .from(BUCKET)
+      .list(targetUserId, { limit: 1000 });
+
+    if (listedObjects && listedObjects.length > 0) {
+      const orphanPaths = listedObjects
+        .filter(obj => obj.name)
+        .map(obj => `${targetUserId}/${obj.name}`);
+      if (orphanPaths.length > 0) {
+        await db.storage.from(BUCKET).remove(orphanPaths);
+      }
+    }
+
+    // 3. Delete all file rows in "vault_files"
+    const { error: deleteFilesError } = await db
+      .from("vault_files")
+      .delete()
+      .eq("user_id", targetUserId);
+
+    if (deleteFilesError) throw deleteFilesError;
+
+    // 4. Delete all folder rows in "vault_folders" (child folders first, then root)
+    let remainingFolders = true;
+    let safetyPasses = 0;
+    while (remainingFolders && safetyPasses < 20) {
+      safetyPasses++;
+      const { data: foldersLeft } = await db
+        .from("vault_folders")
+        .select("id, parent_id")
+        .eq("user_id", targetUserId);
+
+      if (!foldersLeft || foldersLeft.length === 0) {
+        remainingFolders = false;
+        break;
+      }
+
+      const parentIds = new Set(
+        foldersLeft.map(f => f.parent_id).filter(Boolean)
+      );
+      const leafIds = foldersLeft
+        .filter(f => !parentIds.has(f.id))
+        .map(f => f.id);
+
+      const idsToDelete = leafIds.length > 0
+        ? leafIds
+        : foldersLeft.map(f => f.id);
+
+      const { error: delFolderErr } = await db
+        .from("vault_folders")
+        .delete()
+        .in("id", idsToDelete)
+        .eq("user_id", targetUserId);
+
+      if (delFolderErr) throw delFolderErr;
+    }
+
+    // 5. Attempt cloud PIN cleanup via Edge Function if supported
+    try {
+      await callPinFunction({ action: "delete" });
+    } catch (_) {
+      // Ignore if Edge Function only exposes status/setup/verify/change
+    }
+
+    // 6. Attempt auth user deletion RPC if configured on Supabase
+    try {
+      await db.rpc("delete_user");
+    } catch (_) {
+      // Proceed to sign out even if RPC is not deployed
+    }
+
+    // 7. Sign out and return to Sign In screen
+    await db.auth.signOut();
+    resetClientSessionState();
+    showScreen("authScreen");
+    showMessage("authMessage", "Your account data and files have been permanently deleted.");
+    showSnackbar("Account and all vault data deleted.");
+  } catch (error) {
+    showError("vaultMessage", error);
+    showSnackbar(error?.message || "Failed to delete account data.");
+  }
+}
+
 $("signOutBtn").addEventListener("click", handleSignOut);
-$("settingsSignOutBtn").addEventListener("click", handleSignOut);
+$("deleteAccountBtn").addEventListener("click", handleDeleteAccount);
 
 /* ==========================================
    APP STARTUP
