@@ -4,110 +4,824 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-  <meta name="theme-color" content="#111318">
-  <title>Calculator</title>
-  <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="style.css">
+  <meta name="theme-color" content="#101116">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Calculator Vault</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/12.4.2/math.js"></script>
+
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101116;
+      --surface: #1b1d27;
+      --surface2: #252936;
+      --surface3: #303747;
+      --accent: #80aaff;
+      --accent-dark: #3478e5;
+      --text: #f5f5fa;
+      --muted: #a8adbd;
+      --border: rgba(255,255,255,.08);
+      --danger: #ff7777;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, Roboto, "Segoe UI", sans-serif;
+      overscroll-behavior: none;
+    }
+
+    body {
+      min-height: 100dvh;
+    }
+
+    button, input {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .screen {
+      min-height: 100dvh;
+      width: 100%;
+    }
+
+    .app-shell {
+      width: 100%;
+      max-width: 520px;
+      min-height: 100dvh;
+      margin: auto;
+      padding: 22px 20px calc(30px + env(safe-area-inset-bottom));
+    }
+
+    .eyebrow {
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 25px;
+      padding: 24px;
+      box-shadow: 0 12px 40px rgba(0,0,0,.16);
+    }
+
+    .field {
+      width: 100%;
+      min-height: 58px;
+      padding: 0 17px;
+      border-radius: 17px;
+      border: 1px solid #393e4d;
+      background: #131620;
+      color: white;
+      outline: none;
+      font-size: 16px;
+      transition: border .2s;
+    }
+
+    .field:focus {
+      border-color: var(--accent);
+    }
+
+    .primary-btn {
+      min-height: 58px;
+      width: 100%;
+      border: 0;
+      border-radius: 18px;
+      background: var(--accent-dark);
+      color: white;
+      font-weight: 650;
+      font-size: 16px;
+      transition: transform .15s, opacity .15s;
+    }
+
+    .primary-btn:active,
+    .secondary-btn:active,
+    .key:active {
+      transform: scale(.97);
+    }
+
+    .primary-btn:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+    }
+
+    .secondary-btn {
+      min-height: 52px;
+      padding: 0 18px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--surface2);
+      color: white;
+      font-weight: 600;
+      transition: transform .15s;
+    }
+
+    .small-btn {
+      min-height: 42px;
+      padding: 0 13px;
+      border: 1px solid var(--border);
+      border-radius: 13px;
+      background: var(--surface3);
+      color: white;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .message {
+      min-height: 22px;
+      color: #ffbf79;
+      font-size: 14px;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+    }
+
+    /* AUTH */
+
+    .auth-layout {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .auth-card {
+      width: 100%;
+      max-width: 430px;
+      padding: 30px 24px;
+    }
+
+    .brand-icon {
+      width: 58px;
+      height: 58px;
+      display: grid;
+      place-items: center;
+      border-radius: 19px;
+      background: #263958;
+      color: #a9c8ff;
+      font-size: 27px;
+      margin-bottom: 22px;
+    }
+
+    /* PIN */
+
+    .pin-layout {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .pin-card {
+      width: 100%;
+      max-width: 420px;
+      text-align: center;
+    }
+
+    .pin-lock {
+      width: 76px;
+      height: 76px;
+      margin: 0 auto 24px;
+      display: grid;
+      place-items: center;
+      border-radius: 26px;
+      background: #253652;
+      color: #a9c8ff;
+      font-size: 32px;
+    }
+
+    .pin-input {
+      text-align: center;
+      font-size: 25px;
+      letter-spacing: 10px;
+      font-weight: 700;
+    }
+
+    /* CALCULATOR */
+
+    .calculator-layout {
+      display: flex;
+      flex-direction: column;
+      max-width: 480px;
+      min-height: 100dvh;
+      margin: auto;
+      padding: 22px 20px calc(24px + env(safe-area-inset-bottom));
+    }
+
+    .calculator-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .calculator-display {
+      flex: 1;
+      min-height: 190px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      align-items: flex-end;
+      padding: 28px 8px 30px;
+      overflow: hidden;
+    }
+
+    #expression {
+      min-height: 25px;
+      color: var(--muted);
+      font-size: 16px;
+      overflow-wrap: anywhere;
+      text-align: right;
+    }
+
+    #display {
+      width: 100%;
+      color: white;
+      font-size: clamp(42px, 12vw, 68px);
+      font-weight: 350;
+      text-align: right;
+      overflow-wrap: anywhere;
+      line-height: 1.2;
+    }
+
+    .keypad {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 11px;
+    }
+
+    .key {
+      height: clamp(66px, 17vw, 82px);
+      border: 0;
+      border-radius: 23px;
+      background: var(--surface2);
+      color: white;
+      font-size: 24px;
+      font-weight: 500;
+      transition: transform .12s, background .12s;
+    }
+
+    .key.utility {
+      background: #30394a;
+      color: #b9d0ff;
+    }
+
+    .key.operator {
+      background: #283a59;
+      color: #b9d0ff;
+    }
+
+    .key.equals {
+      background: var(--accent-dark);
+      color: white;
+    }
+
+    /* VAULT */
+
+    .vault-layout {
+      width: 100%;
+      max-width: 600px;
+      min-height: 100dvh;
+      margin: auto;
+      padding-bottom: calc(28px + env(safe-area-inset-bottom));
+    }
+
+    .vault-header {
+      padding: 23px 20px 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+
+    .vault-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .vault-main {
+      padding: 22px 18px;
+    }
+
+    .upload-button {
+      width: 100%;
+      min-height: 62px;
+      border: 0;
+      border-radius: 19px;
+      background: var(--accent-dark);
+      color: white;
+      font-size: 17px;
+      font-weight: 650;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .vault-section-title {
+      margin: 27px 2px 14px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 1.1px;
+      text-transform: uppercase;
+    }
+
+    #fileList {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .file-item {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 19px;
+      background: var(--surface);
+      overflow: hidden;
+    }
+
+    .file-icon {
+      width: 100%;
+      height: 95px;
+      display: grid;
+      place-items: center;
+      border-radius: 14px;
+      background: var(--surface2);
+      font-size: 39px;
+    }
+
+    .file-info {
+      min-width: 0;
+      font-size: 14px;
+      font-weight: 650;
+      line-height: 1.4;
+      overflow-wrap: anywhere;
+    }
+
+    .file-item button {
+      min-height: 36px;
+      padding: 0 9px;
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      background: var(--surface2);
+      color: white;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .file-item button:active {
+      background: var(--surface3);
+    }
+
+    .file-item .file-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .file-item .file-actions button {
+      flex: 1;
+    }
+
+    .file-item:has(.file-icon) {
+      position: relative;
+    }
+
+    .empty-state {
+      grid-column: 1 / -1;
+      padding: 45px 18px;
+      text-align: center;
+      border: 1px dashed #454b5b;
+      border-radius: 20px;
+      color: var(--muted);
+    }
+
+    .empty-icon {
+      font-size: 38px;
+      margin-bottom: 12px;
+    }
+
+    .vault-bottom {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 6;
+      display: flex;
+      justify-content: center;
+      padding: 10px 18px calc(10px + env(safe-area-inset-bottom));
+      background: rgba(16,17,22,.94);
+      border-top: 1px solid var(--border);
+      backdrop-filter: blur(16px);
+    }
+
+    .vault-bottom-inner {
+      width: 100%;
+      max-width: 560px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .vault-bottom button {
+      min-height: 47px;
+      border: 1px solid var(--border);
+      border-radius: 15px;
+      background: var(--surface2);
+      color: white;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    /* DIALOGS */
+
+    dialog {
+      width: calc(100% - 32px);
+      max-width: 420px;
+      padding: 0;
+      border: 1px solid #3b4050;
+      border-radius: 25px;
+      background: var(--surface);
+      color: white;
+      box-shadow: 0 25px 90px rgba(0,0,0,.6);
+    }
+
+    dialog::backdrop {
+      background: rgba(0,0,0,.72);
+      backdrop-filter: blur(5px);
+    }
+
+    .dialog-inner {
+      padding: 23px;
+    }
+
+    .dialog-title {
+      font-size: 22px;
+      font-weight: 750;
+      margin-bottom: 8px;
+    }
+
+    #previewContent {
+      width: 100%;
+      max-height: 65dvh;
+      overflow: auto;
+      display: grid;
+      place-items: center;
+      background: #101116;
+      border-radius: 16px;
+      margin: 16px 0;
+    }
+
+    #previewContent img,
+    #previewContent video {
+      max-width: 100%;
+      max-height: 65dvh;
+      object-fit: contain;
+    }
+
+    @media (min-width: 600px) {
+      .vault-layout {
+        padding-top: 20px;
+      }
+
+      .vault-header {
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        margin: 0 18px;
+        position: static;
+      }
+
+      .vault-main {
+        padding-top: 25px;
+      }
+
+      #fileList {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .vault-bottom {
+        position: static;
+        background: transparent;
+        border: 0;
+      }
+    }
+
+    @media (max-width: 360px) {
+      .app-shell {
+        padding-left: 15px;
+        padding-right: 15px;
+      }
+
+      .keypad {
+        gap: 8px;
+      }
+
+      .key {
+        border-radius: 18px;
+      }
+
+      #fileList {
+        gap: 9px;
+      }
+    }
+  </style>
 </head>
+
 <body>
 
-  <main id="authScreen" class="screen hidden">
-    <div class="auth-card">
-      <h1>Calculator Vault</h1>
-      <p>Secure cloud account</p>
-      <input id="email" type="email" placeholder="Email address">
-      <input id="accountPassword" type="password" placeholder="Account password">
-      <button id="signupBtn">Create account</button>
-      <button id="loginBtn" class="secondary">Sign in</button>
-      <p id="authMessage" class="message"></p>
-    </div>
-  </main>
+  <!-- AUTH SCREEN -->
+  <section id="authScreen" class="screen auth-layout">
+    <div class="app-shell auth-layout">
+      <div class="panel auth-card">
+        <div class="brand-icon">▦</div>
 
-  <main id="pinScreen" class="screen hidden">
-    <div class="auth-card">
-      <h1 id="pinTitle">Create your PIN</h1>
-      <p id="pinDescription">Choose a private calculator PIN</p>
-      <input id="pinInput" type="password" inputmode="numeric"
-             maxlength="8" placeholder="Enter PIN">
-      <button id="pinContinue">Continue</button>
-      <p id="pinMessage" class="message"></p>
-    </div>
-  </main>
+        <div class="eyebrow">Private storage</div>
+        <h1 class="text-3xl font-bold mt-3">Calculator Vault</h1>
+        <p class="muted mt-2 mb-8">Your private space, secured in the cloud.</p>
 
-  <main id="calculatorScreen" class="screen hidden">
-    <div class="calculator">
-      <div class="calc-top">
-        <span>CALCULATOR</span>
-        <button id="settingsBtn" aria-label="Settings">⚙</button>
+        <div class="space-y-4">
+          <input
+            id="email"
+            class="field"
+            type="email"
+            placeholder="Email address"
+            autocomplete="email"
+          >
+
+          <input
+            id="accountPassword"
+            class="field"
+            type="password"
+            placeholder="Password"
+            autocomplete="current-password"
+          >
+
+          <button id="signupBtn" class="primary-btn">
+            Create account
+          </button>
+
+          <button id="loginBtn" class="secondary-btn w-full">
+            Sign in
+          </button>
+
+          <p id="authMessage" class="message"></p>
+        </div>
+
+        <p class="muted text-xs mt-7 text-center">
+          Your files are stored privately in your cloud account.
+        </p>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- PIN SCREEN -->
+  <section id="pinScreen" class="screen pin-layout hidden">
+    <div class="app-shell pin-layout">
+      <div class="panel pin-card">
+        <div class="pin-lock">●</div>
+
+        <div class="eyebrow">Vault security</div>
+        <h1 id="pinTitle" class="text-3xl font-bold mt-3">
+          Create your PIN
+        </h1>
+
+        <p id="pinDescription" class="muted mt-3 mb-8">
+          Choose your private calculator PIN
+        </p>
+
+        <input
+          id="pinInput"
+          class="field pin-input mb-5"
+          type="password"
+          inputmode="numeric"
+          maxlength="8"
+          placeholder="••••"
+          autocomplete="off"
+        >
+
+        <button id="pinContinue" class="primary-btn">
+          Continue
+        </button>
+
+        <p id="pinMessage" class="message mt-4"></p>
+
+        <p class="muted text-xs mt-6">
+          Your PIN is securely verified through your account.
+        </p>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- CALCULATOR SCREEN -->
+  <section id="calculatorScreen" class="screen hidden">
+    <div class="calculator-layout">
+
+      <div class="calculator-top">
+        <div>
+          <div class="eyebrow">Private mode</div>
+          <div class="text-xl font-bold mt-1">Calculator</div>
+        </div>
+        <div class="muted text-sm">Standard</div>
       </div>
 
-      <div id="expression" class="expression"></div>
-      <div id="display" class="display">0</div>
+      <div class="calculator-display">
+        <div id="expression"></div>
+        <div id="display">0</div>
+      </div>
 
       <div class="keypad">
-        <button class="key function" data-action="clear">AC</button>
-        <button class="key function" data-action="delete">DEL</button>
-        <button class="key function" data-value="%">%</button>
-        <button class="key operator" data-value="/">÷</button>
+        <button class="key utility" data-action="clear">AC</button>
+        <button class="key utility" data-value="(">(</button>
+        <button class="key utility" data-value=")">)</button>
+        <button class="key operator" data-action="delete">⌫</button>
 
         <button class="key" data-value="7">7</button>
         <button class="key" data-value="8">8</button>
         <button class="key" data-value="9">9</button>
-        <button class="key operator" data-value="*">×</button>
+        <button class="key operator" data-value="/">÷</button>
 
         <button class="key" data-value="4">4</button>
         <button class="key" data-value="5">5</button>
         <button class="key" data-value="6">6</button>
-        <button class="key operator" data-value="-">−</button>
+        <button class="key operator" data-value="*">×</button>
 
         <button class="key" data-value="1">1</button>
         <button class="key" data-value="2">2</button>
         <button class="key" data-value="3">3</button>
+        <button class="key operator" data-value="-">−</button>
+
+        <button class="key utility" data-value="%">%</button>
+        <button class="key" data-value="0">0</button>
+        <button class="key" data-value=".">.</button>
         <button class="key operator" data-value="+">+</button>
 
-        <button class="key zero" data-value="0">0</button>
-        <button class="key" data-value=".">.</button>
-        <button class="key equals" data-action="equals">=</button>
+        <button class="key equals col-span-4" data-action="equals"
+          style="grid-column: span 4; height: 62px;">
+          =
+        </button>
       </div>
+
+      <p class="muted text-xs text-center mt-5">
+        Enter your private PIN and press = to unlock your vault.
+      </p>
     </div>
-  </main>
+  </section>
 
-  <main id="vaultScreen" class="screen hidden">
-    <header class="vault-header">
-      <button id="backBtn">←</button>
-      <div>
-        <h2>My Vault</h2>
-        <small id="folderPath">My files</small>
-      </div>
-      <button id="addFolderBtn">＋ Folder</button>
-    </header>
 
-    <div class="vault-actions">
-      <button id="uploadBtn">＋ Add files</button>
-      <input id="fileInput" type="file" accept="image/*,video/*" multiple hidden>
+  <!-- VAULT SCREEN -->
+  <section id="vaultScreen" class="screen hidden">
+    <div class="vault-layout">
+
+      <header class="vault-header">
+        <div class="vault-header-row">
+          <div class="flex items-center gap-3 min-w-0">
+            <button id="backBtn" class="secondary-btn"
+              style="min-width:48px;padding:0;">←</button>
+
+            <div class="min-w-0">
+              <h1 class="text-2xl font-bold">My Vault</h1>
+              <p id="folderPath" class="muted text-sm mt-1">My files</p>
+            </div>
+          </div>
+
+          <button id="addFolderBtn" class="secondary-btn">
+            + Folder
+          </button>
+        </div>
+      </header>
+
+      <main class="vault-main">
+
+        <button id="uploadBtn" class="upload-button">
+          <span class="text-2xl">＋</span>
+          Add files
+        </button>
+
+        <input
+          id="fileInput"
+          type="file"
+          accept="image/*,video/*"
+          multiple
+          hidden
+        >
+
+        <div class="flex items-center justify-between mt-7">
+          <h2 class="font-bold text-lg">Your files</h2>
+          <span class="muted text-xs">Private storage</span>
+        </div>
+
+        <p id="vaultMessage" class="message mt-3"></p>
+
+        <div id="fileList" class="mt-4">
+          <div class="empty-state">
+            <div class="empty-icon">📁</div>
+            Your files and folders will appear here.
+          </div>
+        </div>
+
+      </main>
+
+      <!-- SETTINGS INSIDE VAULT -->
+      <nav class="vault-bottom">
+        <div class="vault-bottom-inner">
+          <button id="settingsBtn">
+            ⚙ Settings
+          </button>
+
+          <button id="signOutBtn">
+            ↪ Sign out
+          </button>
+        </div>
+      </nav>
+
     </div>
+  </section>
 
-    <div id="vaultMessage" class="message"></div>
-    <section id="fileList" class="file-list"></section>
-  </main>
 
+  <!-- SETTINGS DIALOG -->
   <dialog id="settingsDialog">
-    <h2>Settings</h2>
-    <button id="changePinBtn">Change calculator PIN</button>
-    <button id="signOutBtn" class="danger">Sign out</button>
-    <button id="closeSettingsBtn" class="secondary">Close</button>
-  </dialog>
+    <div class="dialog-inner">
+      <div class="flex items-center justify-between mb-6">
+        <div>
+          <div class="eyebrow">Account</div>
+          <h2 class="dialog-title mt-2">Settings</h2>
+        </div>
 
-  <dialog id="previewDialog">
-    <div class="preview-header">
-      <strong id="previewName"></strong>
-      <button id="closePreviewBtn">✕</button>
+        <button id="closeSettingsBtn" class="secondary-btn"
+          style="min-width:44px;padding:0;">✕</button>
+      </div>
+
+      <div class="panel mb-4" style="padding:17px;">
+        <div class="font-bold">Security</div>
+        <p class="muted text-sm mt-1">
+          Update your private calculator PIN.
+        </p>
+        <button id="changePinBtn" class="primary-btn mt-4">
+          Change PIN
+        </button>
+      </div>
+
+      <p class="muted text-xs">
+        Your PIN is verified securely through your Supabase account.
+      </p>
     </div>
-    <div id="previewContent"></div>
   </dialog>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/13.2.0/math.min.js"></script>
+
+  <!-- PREVIEW DIALOG -->
+  <dialog id="previewDialog">
+    <div class="dialog-inner">
+      <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <div class="eyebrow">File preview</div>
+          <h2 id="previewName" class="font-bold text-lg mt-2 break-words">
+            Preview
+          </h2>
+        </div>
+
+        <button id="closePreviewBtn" class="secondary-btn"
+          style="min-width:44px;padding:0;">✕</button>
+      </div>
+
+      <div id="previewContent"></div>
+    </div>
+  </dialog>
+
+
   <script src="app.js"></script>
+
 </body>
 </html>
