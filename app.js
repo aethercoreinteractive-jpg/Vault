@@ -23,6 +23,7 @@ let calculatorValue = "";
 let pinMode = "setup";
 let firstPin = "";
 let currentPinForChange = "";
+let snackbarTimer = null;
 
 const screens = [
   "authScreen",
@@ -30,6 +31,155 @@ const screens = [
   "calculatorScreen",
   "vaultScreen"
 ];
+
+/* ==========================================
+   IN-APP UI DIALOGS & SNACKBAR
+   (Zero Chrome / Browser Native Popups)
+========================================== */
+
+function showSnackbar(message, durationMs = 3600) {
+  const bar = $("appSnackbar");
+  const text = $("appSnackbarText");
+  if (!bar || !text) return;
+
+  text.textContent = message;
+  bar.classList.remove("hidden");
+
+  if (snackbarTimer) clearTimeout(snackbarTimer);
+  snackbarTimer = setTimeout(() => {
+    bar.classList.add("hidden");
+  }, durationMs);
+}
+
+$("appSnackbarClose")?.addEventListener("click", () => {
+  if (snackbarTimer) clearTimeout(snackbarTimer);
+  $("appSnackbar")?.classList.add("hidden");
+});
+
+function openAppModal({
+  eyebrow = "Vault",
+  title = "",
+  description = "",
+  confirmText = "Confirm",
+  cancelText = "Cancel",
+  danger = false,
+  withInput = false,
+  defaultValue = "",
+  placeholder = ""
+}) {
+  return new Promise(resolve => {
+    const dialog = $("appModalDialog");
+    const eyebrowEl = $("appModalEyebrow");
+    const titleEl = $("appModalTitle");
+    const descEl = $("appModalDescription");
+    const inputWrap = $("appModalInputWrap");
+    const inputEl = $("appModalInput");
+    const cancelBtn = $("appModalCancelBtn");
+    const confirmBtn = $("appModalConfirmBtn");
+
+    eyebrowEl.textContent = eyebrow;
+    titleEl.textContent = title;
+    descEl.textContent = description;
+    descEl.classList.toggle("hidden", !description);
+
+    confirmBtn.textContent = confirmText;
+    cancelBtn.textContent = cancelText;
+    confirmBtn.classList.toggle("is-danger", Boolean(danger));
+
+    if (withInput) {
+      inputWrap.classList.remove("hidden");
+      inputEl.value = defaultValue;
+      inputEl.placeholder = placeholder;
+    } else {
+      inputWrap.classList.add("hidden");
+      inputEl.value = "";
+    }
+
+    let settled = false;
+    const finish = result => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (dialog.open) dialog.close();
+      resolve(result);
+    };
+
+    const onConfirm = () => {
+      if (withInput) {
+        finish(inputEl.value);
+      } else {
+        finish(true);
+      }
+    };
+
+    const onCancel = () => {
+      finish(withInput ? null : false);
+    };
+
+    const onKeyDown = e => {
+      if (e.key === "Enter" && withInput) {
+        e.preventDefault();
+        onConfirm();
+      }
+    };
+
+    const onBackdropClick = e => {
+      if (e.target === dialog) {
+        onCancel();
+      }
+    };
+
+    const onDialogClose = () => {
+      onCancel();
+    };
+
+    function cleanup() {
+      confirmBtn.removeEventListener("click", onConfirm);
+      cancelBtn.removeEventListener("click", onCancel);
+      inputEl.removeEventListener("keydown", onKeyDown);
+      dialog.removeEventListener("click", onBackdropClick);
+      dialog.removeEventListener("close", onDialogClose);
+    }
+
+    confirmBtn.addEventListener("click", onConfirm);
+    cancelBtn.addEventListener("click", onCancel);
+    inputEl.addEventListener("keydown", onKeyDown);
+    dialog.addEventListener("click", onBackdropClick);
+    dialog.addEventListener("close", onDialogClose);
+
+    dialog.showModal();
+
+    if (withInput) {
+      requestAnimationFrame(() => {
+        inputEl.focus();
+        inputEl.select();
+      });
+    }
+  });
+}
+
+function showConfirmModal({ eyebrow, title, description, confirmText = "Confirm", danger = false }) {
+  return openAppModal({
+    eyebrow,
+    title,
+    description,
+    confirmText,
+    danger,
+    withInput: false
+  });
+}
+
+function showPromptModal({ eyebrow, title, description = "", defaultValue = "", placeholder = "", confirmText = "Save" }) {
+  return openAppModal({
+    eyebrow,
+    title,
+    description,
+    confirmText,
+    withInput: true,
+    defaultValue,
+    placeholder
+  });
+}
 
 /* ==========================================
    GENERAL HELPERS
@@ -433,8 +583,7 @@ $("pinContinue").addEventListener("click", async () => {
 
       firstPin = "";
       showCalculator();
-
-      alert("PIN saved securely to your account.");
+      showSnackbar("PIN saved securely to your account.");
     }
   } catch (error) {
     showError("pinMessage", error);
@@ -564,7 +713,13 @@ $("backBtn").addEventListener("click", async () => {
 });
 
 $("addFolderBtn").addEventListener("click", async () => {
-  const name = prompt("Enter folder name:");
+  const name = await showPromptModal({
+    eyebrow: "New Folder",
+    title: "Create folder",
+    description: "Organize your private photos and videos inside a new folder.",
+    placeholder: "Folder name",
+    confirmText: "Create"
+  });
 
   if (!name || !name.trim()) return;
 
@@ -582,6 +737,7 @@ $("addFolderBtn").addEventListener("click", async () => {
     if (error) throw error;
 
     await loadVault();
+    showSnackbar(`Folder "${name.trim()}" created.`);
   } catch (error) {
     showError("vaultMessage", error);
   }
@@ -874,10 +1030,7 @@ $("fileInput").addEventListener("change", async event => {
         `${uploadedCount} uploaded. ${failedFiles.join(" | ")}`
       );
     } else {
-      showMessage(
-        "vaultMessage",
-        `${uploadedCount} file(s) uploaded successfully.`
-      );
+      showSnackbar(`${uploadedCount} file(s) uploaded successfully.`);
     }
   } catch (error) {
     showError("vaultMessage", error);
@@ -938,14 +1091,26 @@ $("closePreviewBtn").addEventListener("click", () => {
   $("previewContent").replaceChildren();
 });
 
+$("previewDialog")?.addEventListener("click", e => {
+  if (e.target === $("previewDialog")) {
+    $("closePreviewBtn").click();
+  }
+});
+
 /* ==========================================
    RENAME FILE
 ========================================== */
 
 async function renameFile(file) {
-  const newName = prompt("Enter new file name:", file.file_name);
+  const newName = await showPromptModal({
+    eyebrow: "Rename File",
+    title: "Rename file",
+    defaultValue: file.file_name,
+    placeholder: "File name",
+    confirmText: "Rename"
+  });
 
-  if (!newName || !newName.trim()) return;
+  if (!newName || !newName.trim() || newName.trim() === file.file_name) return;
 
   try {
     const { error } = await db
@@ -957,6 +1122,7 @@ async function renameFile(file) {
     if (error) throw error;
 
     await loadVault();
+    showSnackbar("File renamed.");
   } catch (error) {
     showError("vaultMessage", error);
   }
@@ -967,7 +1133,15 @@ async function renameFile(file) {
 ========================================== */
 
 async function deleteFile(file) {
-  if (!confirm(`Delete ${file.file_name}?`)) return;
+  const confirmed = await showConfirmModal({
+    eyebrow: "Permanent Action",
+    title: "Delete file?",
+    description: `"${file.file_name}" will be permanently removed from your vault.`,
+    confirmText: "Delete",
+    danger: true
+  });
+
+  if (!confirmed) return;
 
   try {
     const { error: storageError } = await db.storage
@@ -985,6 +1159,7 @@ async function deleteFile(file) {
     if (error) throw error;
 
     await loadVault();
+    showSnackbar("File deleted.");
   } catch (error) {
     showError("vaultMessage", error);
   }
@@ -995,9 +1170,15 @@ async function deleteFile(file) {
 ========================================== */
 
 async function renameFolder(folder) {
-  const name = prompt("Enter new folder name:", folder.name);
+  const name = await showPromptModal({
+    eyebrow: "Rename Folder",
+    title: "Rename folder",
+    defaultValue: folder.name,
+    placeholder: "Folder name",
+    confirmText: "Rename"
+  });
 
-  if (!name || !name.trim()) return;
+  if (!name || !name.trim() || name.trim() === folder.name) return;
 
   try {
     const { error } = await db
@@ -1009,6 +1190,7 @@ async function renameFolder(folder) {
     if (error) throw error;
 
     await loadVault();
+    showSnackbar("Folder renamed.");
   } catch (error) {
     showError("vaultMessage", error);
   }
@@ -1035,13 +1217,20 @@ async function deleteFolder(folder) {
     if (fileError) throw fileError;
 
     if (folderCount || fileCount) {
-      return showMessage(
-        "vaultMessage",
+      return showSnackbar(
         "This folder is not empty. Delete or move its contents first."
       );
     }
 
-    if (!confirm(`Delete folder ${folder.name}?`)) return;
+    const confirmed = await showConfirmModal({
+      eyebrow: "Permanent Action",
+      title: "Delete folder?",
+      description: `Are you sure you want to delete "${folder.name}"?`,
+      confirmText: "Delete",
+      danger: true
+    });
+
+    if (!confirmed) return;
 
     const { error } = await db
       .from("vault_folders")
@@ -1052,6 +1241,7 @@ async function deleteFolder(folder) {
     if (error) throw error;
 
     await loadVault();
+    showSnackbar("Folder deleted.");
   } catch (error) {
     showError("vaultMessage", error);
   }
@@ -1070,6 +1260,12 @@ $("closeSettingsBtn").addEventListener("click", () => {
   $("settingsDialog").close();
 });
 
+$("settingsDialog")?.addEventListener("click", e => {
+  if (e.target === $("settingsDialog")) {
+    $("settingsDialog").close();
+  }
+});
+
 $("changePinBtn").addEventListener("click", () => {
   $("settingsDialog").close();
   currentPinForChange = "";
@@ -1077,7 +1273,17 @@ $("changePinBtn").addEventListener("click", () => {
 });
 
 async function handleSignOut() {
-  if (!confirm("Sign out of your account?")) return;
+  if ($("settingsDialog")?.open) $("settingsDialog").close();
+
+  const confirmed = await showConfirmModal({
+    eyebrow: "Account Session",
+    title: "Sign out?",
+    description: "You will need to sign back in with your email and password to access your vault.",
+    confirmText: "Sign out",
+    danger: true
+  });
+
+  if (!confirmed) return;
 
   try {
     const { error } = await db.auth.signOut();
@@ -1089,7 +1295,6 @@ async function handleSignOut() {
     firstPin = "";
     calculatorValue = "";
 
-    if ($("settingsDialog")?.open) $("settingsDialog").close();
     showScreen("authScreen");
     showMessage("authMessage", "You have signed out.");
   } catch (error) {
