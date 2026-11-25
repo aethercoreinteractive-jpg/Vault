@@ -226,26 +226,6 @@
       background: var(--surface-high);
     }
 
-    .danger-btn {
-      min-height: 50px;
-      width: 100%;
-      border: 1px solid rgba(242, 139, 130, 0.28);
-      border-radius: var(--radius-full);
-      background: var(--danger-container);
-      color: var(--danger);
-      font-weight: 600;
-      font-size: 15px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      transition: transform 0.12s cubic-bezier(0.2, 0, 0, 1), background-color 0.15s ease;
-    }
-
-    .danger-btn:active:not(:disabled) {
-      transform: scale(0.96);
-    }
-
     .solid-danger-btn {
       min-height: 50px;
       width: 100%;
@@ -710,26 +690,58 @@
       place-items: center;
     }
 
-    /* DIALOGS, MODALS & SNACKBAR */
-    dialog {
-      width: calc(100% - 28px);
-      max-width: 420px;
-      max-height: calc(100dvh - 32px);
-      margin: auto;
-      padding: 0;
-      border: 1px solid var(--outline-strong);
-      border-radius: var(--radius-xl);
-      background: var(--surface);
-      color: var(--text);
-      box-shadow: 0 28px 80px rgba(0, 0, 0, 0.78);
+    /* PURE WEBSITE OVERLAY BOXES (NOT NATIVE <dialog>) */
+    .web-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      background: rgba(0, 0, 0, 0.78);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
       overflow-y: auto;
-      animation: dialogPopIn 0.18s cubic-bezier(0.2, 0, 0, 1);
+      animation: overlayFade 0.16s ease-out;
     }
 
-    @keyframes dialogPopIn {
+    .web-overlay.top-layer {
+      z-index: 55;
+    }
+
+    @keyframes overlayFade {
       from {
         opacity: 0;
-        transform: scale(0.96) translateY(8px);
+      }
+      to {
+        opacity: 1;
+      }
+    }
+
+    .web-modal-box {
+      width: 100%;
+      max-width: 420px;
+      max-height: calc(100dvh - 36px);
+      overflow-y: auto;
+      background: var(--surface);
+      border: 1.5px solid var(--outline-strong);
+      border-radius: var(--radius-xl);
+      padding: 22px;
+      color: var(--text);
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.8);
+      animation: boxScaleIn 0.18s cubic-bezier(0.2, 0, 0, 1);
+    }
+
+    .web-modal-box.wide {
+      max-width: 720px;
+      background: #0B0D10;
+    }
+
+    @keyframes boxScaleIn {
+      from {
+        opacity: 0;
+        transform: scale(0.95) translateY(8px);
       }
       to {
         opacity: 1;
@@ -737,22 +749,7 @@
       }
     }
 
-    dialog::backdrop {
-      background: rgba(0, 0, 0, 0.76);
-      backdrop-filter: blur(6px);
-      -webkit-backdrop-filter: blur(6px);
-    }
-
-    #previewDialog {
-      max-width: 720px;
-      background: #0B0D10;
-    }
-
-    .dialog-inner {
-      padding: 22px;
-    }
-
-    .dialog-title {
+    .modal-title {
       font-size: 20px;
       font-weight: 700;
       letter-spacing: -0.01em;
@@ -768,7 +765,7 @@
     #previewContent {
       width: 100%;
       min-height: 220px;
-      max-height: 70dvh;
+      max-height: 68dvh;
       overflow: auto;
       display: flex;
       align-items: center;
@@ -783,7 +780,7 @@
     #previewContent img,
     #previewContent video {
       max-width: 100%;
-      max-height: 66dvh;
+      max-height: 64dvh;
       width: auto;
       height: auto;
       border-radius: var(--radius-md);
@@ -795,7 +792,7 @@
       left: 16px;
       right: 16px;
       bottom: calc(22px + env(safe-area-inset-bottom));
-      z-index: 60;
+      z-index: 70;
       max-width: 460px;
       margin: 0 auto;
       padding: 13px 16px;
@@ -858,7 +855,7 @@
 
     @media (max-width: 360px) {
       .auth-card,
-      .dialog-inner {
+      .web-modal-box {
         padding: 20px 16px;
       }
 
@@ -1157,13 +1154,13 @@
   </section>
 
 
-  <!-- 5. SETTINGS DIALOG (LOGOUT & DELETE ACCOUNT INSIDE SETTINGS) -->
-  <dialog id="settingsDialog">
-    <div class="dialog-inner">
+  <!-- 5. SETTINGS WEBSITE OVERLAY -->
+  <div id="settingsOverlay" class="web-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="settingsHeading">
+    <div class="web-modal-box">
       <div class="flex items-center justify-between gap-3 mb-5">
         <div>
           <div class="m3-eyebrow">Vault Preferences</div>
-          <h2 class="dialog-title mt-1">Settings</h2>
+          <h2 id="settingsHeading" class="modal-title mt-1">Settings</h2>
         </div>
 
         <button id="closeSettingsBtn" type="button" class="icon-btn" aria-label="Close settings">✕</button>
@@ -1225,12 +1222,12 @@
         </div>
       </div>
     </div>
-  </dialog>
+  </div>
 
 
-  <!-- FILE PREVIEW DIALOG -->
-  <dialog id="previewDialog">
-    <div class="dialog-inner">
+  <!-- FILE PREVIEW WEBSITE OVERLAY -->
+  <div id="previewOverlay" class="web-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="previewName">
+    <div class="web-modal-box wide">
       <div class="flex items-center justify-between gap-3">
         <div class="min-w-0">
           <div class="m3-eyebrow">Media Viewer</div>
@@ -1245,14 +1242,14 @@
 
       <div id="previewContent"></div>
     </div>
-  </dialog>
+  </div>
 
 
-  <!-- INBUILT WEBSITE CONFIRM / PROMPT MODAL -->
-  <dialog id="appModalDialog">
-    <div class="dialog-inner">
-      <div id="appModalEyebrow" class="m3-eyebrow">Action</div>
-      <h2 id="appModalTitle" class="dialog-title mt-1">Confirm</h2>
+  <!-- OUR OWN WEBSITE CONFIRM / INPUT BOX OVERLAY -->
+  <div id="appModalOverlay" class="web-overlay top-layer hidden" role="dialog" aria-modal="true" aria-labelledby="appModalTitle">
+    <div id="appModalBox" class="web-modal-box">
+      <div id="appModalEyebrow" class="m3-eyebrow">Vault</div>
+      <h2 id="appModalTitle" class="modal-title mt-1">Confirm</h2>
       <p id="appModalDescription" class="m3-muted text-sm mt-2 leading-relaxed"></p>
 
       <div id="appModalInputWrap" class="mt-4 hidden">
@@ -1269,10 +1266,10 @@
         <button id="appModalConfirmBtn" type="button" class="primary-btn">Confirm</button>
       </div>
     </div>
-  </dialog>
+  </div>
 
 
-  <!-- INBUILT WEBSITE SNACKBAR -->
+  <!-- OUR OWN WEBSITE SNACKBAR -->
   <div id="appSnackbar" class="m3-snackbar hidden" role="status" aria-live="polite">
     <span id="appSnackbarText"></span>
     <button id="appSnackbarClose" type="button" class="m3-snackbar-close">Dismiss</button>
