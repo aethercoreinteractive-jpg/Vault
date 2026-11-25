@@ -25,7 +25,7 @@ let allFilesCache = [];
 let currentFolderMedia = [];
 let activeViewerIndex = -1;
 
-// Target folder for "+" upload button
+// Target folder for "+" card inside a folder
 let uploadTargetFolderId = null;
 
 // Multi-select state (long-press triggered)
@@ -44,7 +44,6 @@ let firstPin = "";
 let currentPinForChange = "";
 let snackbarTimer = null;
 let activeScreenId = "authScreen";
-let handlingPopState = false;
 
 const screens = [
   "authScreen",
@@ -52,96 +51,6 @@ const screens = [
   "calculatorScreen",
   "vaultScreen"
 ];
-
-/* ==========================================
-   NATIVE BACK BUTTON / HISTORY NAVIGATION
-========================================== */
-
-function syncHistoryStack() {
-  if (handlingPopState) return;
-
-  const state = {
-    screen: activeScreenId,
-    tab: activeVaultTab,
-    folderId: currentFolder,
-    folderDepth: folderStack.length,
-    viewerOpen: Boolean($("previewDialog")?.open),
-    viewerIndex: activeViewerIndex
-  };
-
-  try {
-    history.pushState(state, "", window.location.href);
-  } catch (_) {}
-}
-
-window.addEventListener("popstate", async () => {
-  handlingPopState = true;
-  try {
-    closeFolderMoreMenu();
-
-    if ($("appModalDialog")?.open) {
-      $("appModalDialog").close();
-      return;
-    }
-
-    if ($("settingsDialog")?.open) {
-      $("settingsDialog").close();
-      return;
-    }
-
-    if ($("previewDialog")?.open) {
-      pauseActiveViewerVideo();
-      activeViewerIndex = -1;
-      $("previewDialog").close();
-      $("viewerSlide")?.replaceChildren();
-      return;
-    }
-
-    if (activeScreenId === "vaultScreen") {
-      if (pendingMoveFileIds) {
-        await discardMoveMode();
-        return;
-      }
-
-      if (selectionMode) {
-        exitSelectionMode();
-        return;
-      }
-
-      if (activeVaultTab === "albums") {
-        if (folderStack.length > 0) {
-          currentFolder = folderStack.pop();
-          await loadVault();
-          return;
-        }
-
-        if (currentFolder !== null) {
-          currentFolder = null;
-          await loadVault();
-          return;
-        }
-      }
-
-      showCalculator();
-      return;
-    }
-
-    if (activeScreenId === "pinScreen") {
-      showCalculator();
-      return;
-    }
-
-    if (activeScreenId === "calculatorScreen") {
-      try {
-        history.pushState({ screen: "calculatorScreen" }, "", window.location.href);
-      } catch (_) {}
-      showSnackbar("Press AC to clear or enter your PIN.");
-      return;
-    }
-  } finally {
-    handlingPopState = false;
-  }
-});
 
 /* ==========================================
    FLOATING TABS (ALL MEDIA / ALBUMS)
@@ -168,7 +77,6 @@ $("tabAllMediaBtn")?.addEventListener("click", async () => {
   exitSelectionMode();
   activeVaultTab = "all_media";
   syncTabButtonsUI();
-  syncHistoryStack();
   await loadVault();
 });
 
@@ -176,8 +84,9 @@ $("tabAlbumsBtn")?.addEventListener("click", async () => {
   closeFolderMoreMenu();
   exitSelectionMode();
   activeVaultTab = "albums";
+  currentFolder = null;
+  folderStack = [];
   syncTabButtonsUI();
-  syncHistoryStack();
   await loadVault();
 });
 
@@ -226,7 +135,7 @@ $("menuDeleteFolderBtn")?.addEventListener("click", async () => {
 });
 
 /* ==========================================
-   MULTI-BILLION DOLLAR LAUNCH OVERLAY
+   VAULT LAUNCH OVERLAY
 ========================================== */
 
 function setLaunchOverlay(visible, percent = 0, status = "", title = "Initializing Vault") {
@@ -284,7 +193,8 @@ function openAppModal({
   danger = false,
   withInput = false,
   defaultValue = "",
-  placeholder = ""
+  placeholder = "",
+  choiceButtons = null
 }) {
   return new Promise(resolve => {
     const dialog = $("appModalDialog");
@@ -293,17 +203,12 @@ function openAppModal({
     const descEl = $("appModalDescription");
     const inputWrap = $("appModalInputWrap");
     const inputEl = $("appModalInput");
-    const cancelBtn = $("appModalCancelBtn");
-    const confirmBtn = $("appModalConfirmBtn");
+    const actionsEl = $("appModalActions");
 
     eyebrowEl.textContent = eyebrow;
     titleEl.textContent = title;
     descEl.textContent = description;
     descEl.classList.toggle("hidden", !description);
-
-    confirmBtn.textContent = confirmText;
-    cancelBtn.textContent = cancelText;
-    confirmBtn.classList.toggle("is-danger", Boolean(danger));
 
     if (withInput) {
       inputWrap.classList.remove("hidden");
@@ -314,57 +219,78 @@ function openAppModal({
       inputEl.value = "";
     }
 
+    actionsEl.replaceChildren();
+    actionsEl.classList.remove("three-col");
+
     let settled = false;
+    const listeners = [];
+
     const finish = result => {
       if (settled) return;
       settled = true;
-      cleanup();
+      for (const { el, evt, fn } of listeners) {
+        el.removeEventListener(evt, fn);
+      }
       if (dialog.open) dialog.close();
       resolve(result);
     };
 
-    const onConfirm = () => {
+    const addListener = (el, evt, fn) => {
+      el.addEventListener(evt, fn);
+      listeners.push({ el, evt, fn });
+    };
+
+    if (Array.isArray(choiceButtons) && choiceButtons.length > 0) {
+      actionsEl.classList.add("three-col");
+      for (const btnSpec of choiceButtons) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = btnSpec.label;
+        b.className = btnSpec.variant === "primary"
+          ? "primary-btn"
+          : btnSpec.variant === "danger"
+            ? "solid-danger-btn"
+            : "secondary-btn";
+        addListener(b, "click", () => finish(btnSpec.value));
+        actionsEl.append(b);
+      }
+    } else {
+      const cancelBtn = document.createElement("button");
+      cancelBtn.type = "button";
+      cancelBtn.className = "secondary-btn";
+      cancelBtn.textContent = cancelText;
+
+      const confirmBtn = document.createElement("button");
+      confirmBtn.type = "button";
+      confirmBtn.className = danger ? "primary-btn is-danger" : "primary-btn";
+      confirmBtn.textContent = confirmText;
+
+      addListener(cancelBtn, "click", () => finish(withInput ? null : false));
+      addListener(confirmBtn, "click", () => {
+        finish(withInput ? inputEl.value : true);
+      });
+
       if (withInput) {
-        finish(inputEl.value);
-      } else {
-        finish(true);
+        addListener(inputEl, "keydown", e => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            finish(inputEl.value);
+          }
+        });
       }
-    };
 
-    const onCancel = () => {
-      finish(withInput ? null : false);
-    };
-
-    const onKeyDown = e => {
-      if (e.key === "Enter" && withInput) {
-        e.preventDefault();
-        onConfirm();
-      }
-    };
-
-    const onBackdropClick = e => {
-      if (e.target === dialog) {
-        onCancel();
-      }
-    };
-
-    const onDialogClose = () => {
-      onCancel();
-    };
-
-    function cleanup() {
-      confirmBtn.removeEventListener("click", onConfirm);
-      cancelBtn.removeEventListener("click", onCancel);
-      inputEl.removeEventListener("keydown", onKeyDown);
-      dialog.removeEventListener("click", onBackdropClick);
-      dialog.removeEventListener("close", onDialogClose);
+      actionsEl.append(cancelBtn, confirmBtn);
     }
 
-    confirmBtn.addEventListener("click", onConfirm);
-    cancelBtn.addEventListener("click", onCancel);
-    inputEl.addEventListener("keydown", onKeyDown);
-    dialog.addEventListener("click", onBackdropClick);
-    dialog.addEventListener("close", onDialogClose);
+    addListener(dialog, "click", e => {
+      if (e.target === dialog) {
+        finish(withInput ? null : false);
+      }
+    });
+
+    addListener(dialog, "close", () => {
+      finish(withInput ? null : false);
+    });
 
     dialog.showModal();
 
@@ -401,6 +327,91 @@ function showPromptModal({ eyebrow, title, description = "", defaultValue = "", 
 }
 
 /* ==========================================
+   STEP-BY-STEP BACK NAVIGATION
+   (No history stack pushState/popstate)
+========================================== */
+
+async function stepBackVault() {
+  closeFolderMoreMenu();
+
+  if (pendingMoveFileIds) {
+    if (folderStack.length > 0) {
+      currentFolder = folderStack.pop();
+      await loadVault();
+    } else {
+      await discardMoveMode();
+    }
+    return;
+  }
+
+  if (selectionMode) {
+    exitSelectionMode();
+    return;
+  }
+
+  if (activeVaultTab === "albums") {
+    // 1. Inside a folder -> go back one step (parent folder or Albums root)
+    if (currentFolder !== null) {
+      currentFolder = folderStack.length > 0 ? folderStack.pop() : null;
+      await loadVault();
+      return;
+    }
+
+    // 2. At Albums root -> go one step to All media
+    activeVaultTab = "all_media";
+    syncTabButtonsUI();
+    await loadVault();
+    return;
+  }
+
+  // 3. At All media -> ask confirmation to close vault or sign out
+  const choice = await openAppModal({
+    eyebrow: "Vault Exit",
+    title: "Close vault or sign out?",
+    description: "Choose whether to close the vault back to the calculator or sign out of your account.",
+    choiceButtons: [
+      { label: "Close vault", value: "close", variant: "primary" },
+      { label: "Sign out", value: "signout", variant: "danger" },
+      { label: "Stay in vault", value: "stay", variant: "secondary" }
+    ]
+  });
+
+  if (choice === "close") {
+    showCalculator();
+  } else if (choice === "signout") {
+    await performSignOutDirect();
+  }
+}
+
+$("backBtn").addEventListener("click", stepBackVault);
+
+document.addEventListener("keydown", async e => {
+  if (e.key !== "Escape") return;
+  if ($("appModalDialog")?.open) return;
+
+  if ($("settingsDialog")?.open) {
+    $("settingsDialog").close();
+    return;
+  }
+
+  if ($("previewDialog")?.open) {
+    pauseActiveViewerVideo();
+    activeViewerIndex = -1;
+    $("previewDialog").close();
+    $("viewerSlide")?.replaceChildren();
+    return;
+  }
+
+  if (activeScreenId === "vaultScreen") {
+    e.preventDefault();
+    await stepBackVault();
+  } else if (activeScreenId === "pinScreen") {
+    e.preventDefault();
+    showCalculator();
+  }
+});
+
+/* ==========================================
    GENERAL HELPERS
 ========================================== */
 
@@ -412,7 +423,6 @@ function showScreen(id) {
 
   if ($(id)) $(id).classList.remove("hidden");
   activeScreenId = id;
-  syncHistoryStack();
 }
 
 function showMessage(id, message) {
@@ -1101,7 +1111,7 @@ async function unlockVault(pin) {
 }
 
 /* ==========================================
-   FOLDER NAVIGATION & PLUS UPLOAD
+   FOLDER NAVIGATION & UPLOAD
 ========================================== */
 
 async function enterFolder(folderId) {
@@ -1110,7 +1120,6 @@ async function enterFolder(folderId) {
   syncTabButtonsUI();
   folderStack.push(currentFolder);
   currentFolder = folderId;
-  syncHistoryStack();
   await loadVault();
 }
 
@@ -1118,50 +1127,6 @@ function triggerFolderUpload(targetFolderId) {
   uploadTargetFolderId = targetFolderId;
   $("fileInput")?.click();
 }
-
-$("insideFolderPlusBtn")?.addEventListener("click", e => {
-  e.stopPropagation();
-  if (!currentFolder) return;
-  triggerFolderUpload(currentFolder);
-});
-
-$("backBtn").addEventListener("click", async () => {
-  closeFolderMoreMenu();
-
-  if (pendingMoveFileIds) {
-    if (folderStack.length > 0) {
-      currentFolder = folderStack.pop();
-      syncHistoryStack();
-      await loadVault();
-    } else {
-      await discardMoveMode();
-    }
-    return;
-  }
-
-  if (selectionMode) {
-    exitSelectionMode();
-    return;
-  }
-
-  if (activeVaultTab === "albums") {
-    if (folderStack.length > 0) {
-      currentFolder = folderStack.pop();
-      syncHistoryStack();
-      await loadVault();
-      return;
-    }
-
-    if (currentFolder !== null) {
-      currentFolder = null;
-      syncHistoryStack();
-      await loadVault();
-      return;
-    }
-  }
-
-  showCalculator();
-});
 
 $("addFolderBtn").addEventListener("click", async () => {
   closeFolderMoreMenu();
@@ -1346,7 +1311,6 @@ function getFolderBreadcrumbLabel(folderId, folders) {
 function updateFolderModeUI(folders) {
   const wrapper = $("vaultWrapper");
   const folderMenuWrap = $("folderMenuWrap");
-  const plusBtn = $("insideFolderPlusBtn");
   const screenTitle = $("vaultScreenTitle");
   const folderPath = $("folderPath");
   const addFolderBtn = $("addFolderBtn");
@@ -1371,11 +1335,7 @@ function updateFolderModeUI(folders) {
     folderMenuWrap.classList.toggle("hidden", !insideFolder || inMoveMode);
   }
 
-  if (plusBtn) {
-    plusBtn.classList.toggle("hidden", !insideFolder || inMoveMode);
-  }
-
-  // Keep Folder button visible on top right in Albums view (and not inside an opened folder or move mode)
+  // Keep Folder button on top right in Albums view (and not inside an opened folder or move mode)
   if (addFolderBtn) {
     addFolderBtn.classList.toggle("hidden", isAllMediaTab || insideFolder || inMoveMode);
   }
@@ -1440,6 +1400,7 @@ async function loadVault(options = {}) {
     updateFolderModeUI(allFoldersCache);
 
     const isAllMediaTab = activeVaultTab === "all_media";
+    const insideFolder = !isAllMediaTab && Boolean(currentFolder && currentFolderObj);
 
     const folderItems = isAllMediaTab
       ? []
@@ -1466,7 +1427,7 @@ async function loadVault(options = {}) {
       const thumb = document.createElement("div");
       thumb.className = "folder-thumb";
 
-      // Display top-placed image inside folder as thumbnail picture
+      // Display top-placed image inside folder as thumbnail picture (no overlay)
       const topImage = findTopImageInFolderTree(folder.id, allFoldersCache, allFilesCache);
 
       if (topImage) {
@@ -1483,25 +1444,6 @@ async function loadVault(options = {}) {
         }
       } else {
         thumb.textContent = "📁";
-      }
-
-      // Plus-only icon button on folder card (no text label)
-      if (!pendingMoveFileIds) {
-        const cardPlusBtn = document.createElement("button");
-        cardPlusBtn.type = "button";
-        cardPlusBtn.className = "folder-plus-badge";
-        cardPlusBtn.setAttribute("aria-label", "Add");
-        cardPlusBtn.innerHTML = `
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-          </svg>
-        `;
-        cardPlusBtn.addEventListener("click", e => {
-          e.stopPropagation();
-          triggerFolderUpload(folder.id);
-        });
-        thumb.append(cardPlusBtn);
       }
 
       const title = document.createElement("div");
@@ -1523,6 +1465,24 @@ async function loadVault(options = {}) {
 
       item.append(thumb, title);
       fragment.append(item);
+    }
+
+    // Place "+" card right at the beginning before first image inside a folder
+    if (insideFolder && !pendingMoveFileIds && !selectionMode) {
+      const addSlotCard = document.createElement("button");
+      addSlotCard.type = "button";
+      addSlotCard.className = "add-media-slot-card";
+      addSlotCard.setAttribute("aria-label", "Add");
+      addSlotCard.innerHTML = `
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="12" y1="5" x2="12" y2="19"></line>
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+      `;
+      addSlotCard.addEventListener("click", () => {
+        triggerFolderUpload(currentFolder);
+      });
+      fragment.append(addSlotCard);
     }
 
     const totalMedia = fileItems.length;
@@ -1640,14 +1600,14 @@ async function loadVault(options = {}) {
       fragment.append(card);
     }
 
-    if (!folderItems.length && !fileItems.length) {
+    if (!folderItems.length && !fileItems.length && !insideFolder) {
       const empty = document.createElement("div");
       empty.className = "empty-state";
       const subText = pendingMoveFileIds
         ? "Tap Move here above to place items in this album."
         : isAllMediaTab
           ? "No photos or videos uploaded yet."
-          : "Tap + above to add photos or videos to this album.";
+          : "Create an album folder using the Folder button above.";
       empty.innerHTML = `
         <div class="empty-icon-wrap" aria-hidden="true">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1831,7 +1791,6 @@ async function openViewerAtIndex(index) {
   const dialog = $("previewDialog");
   if (!dialog.open) {
     dialog.showModal();
-    syncHistoryStack();
   }
   await renderViewerSlide(activeViewerIndex);
 }
@@ -2146,6 +2105,19 @@ $("changePinBtn").addEventListener("click", () => {
   showPinSetup("verifyCurrent");
 });
 
+async function performSignOutDirect() {
+  try {
+    const { error } = await db.auth.signOut();
+    if (error) throw error;
+
+    resetClientSessionState();
+    showScreen("authScreen");
+    showMessage("authMessage", "You have signed out.");
+  } catch (error) {
+    showError("authMessage", error);
+  }
+}
+
 async function handleSignOut() {
   if ($("settingsDialog")?.open) $("settingsDialog").close();
 
@@ -2158,17 +2130,7 @@ async function handleSignOut() {
   });
 
   if (!confirmed) return;
-
-  try {
-    const { error } = await db.auth.signOut();
-    if (error) throw error;
-
-    resetClientSessionState();
-    showScreen("authScreen");
-    showMessage("authMessage", "You have signed out.");
-  } catch (error) {
-    showError("authMessage", error);
-  }
+  await performSignOutDirect();
 }
 
 async function handleDeleteAccount() {
@@ -2291,10 +2253,6 @@ $("deleteAccountBtn").addEventListener("click", handleDeleteAccount);
 
 async function startApp() {
   try {
-    try {
-      history.replaceState({ screen: "authScreen" }, "", window.location.href);
-    } catch (_) {}
-
     const { data, error } = await db.auth.getSession();
     if (error) throw error;
 
