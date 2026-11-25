@@ -33,7 +33,7 @@ const screens = [
 ];
 
 /* ==========================================
-   INBUILT WEBSITE UI MODALS & SNACKBAR
+   OUR OWN WEBSITE BOXES & SNACKBAR
 ========================================== */
 
 function showSnackbar(message, durationMs = 3600) {
@@ -55,6 +55,16 @@ $("appSnackbarClose")?.addEventListener("click", () => {
   $("appSnackbar")?.classList.add("hidden");
 });
 
+function openOverlay(id) {
+  const el = $(id);
+  if (el) el.classList.remove("hidden");
+}
+
+function closeOverlay(id) {
+  const el = $(id);
+  if (el) el.classList.add("hidden");
+}
+
 function openAppModal({
   eyebrow = "Vault",
   title = "",
@@ -67,7 +77,7 @@ function openAppModal({
   placeholder = ""
 }) {
   return new Promise(resolve => {
-    const dialog = $("appModalDialog");
+    const overlay = $("appModalOverlay");
     const eyebrowEl = $("appModalEyebrow");
     const titleEl = $("appModalTitle");
     const descEl = $("appModalDescription");
@@ -75,6 +85,11 @@ function openAppModal({
     const inputEl = $("appModalInput");
     const cancelBtn = $("appModalCancelBtn");
     const confirmBtn = $("appModalConfirmBtn");
+
+    if (!overlay || !cancelBtn || !confirmBtn) {
+      resolve(withInput ? null : false);
+      return;
+    }
 
     eyebrowEl.textContent = eyebrow;
     titleEl.textContent = title;
@@ -85,11 +100,11 @@ function openAppModal({
     cancelBtn.textContent = cancelText;
     confirmBtn.classList.toggle("is-danger", Boolean(danger));
 
-    if (withInput) {
+    if (withInput && inputWrap && inputEl) {
       inputWrap.classList.remove("hidden");
       inputEl.value = defaultValue;
       inputEl.placeholder = placeholder;
-    } else {
+    } else if (inputWrap && inputEl) {
       inputWrap.classList.add("hidden");
       inputEl.value = "";
     }
@@ -99,13 +114,13 @@ function openAppModal({
       if (settled) return;
       settled = true;
       cleanup();
-      if (dialog.open) dialog.close();
+      closeOverlay("appModalOverlay");
       resolve(result);
     };
 
     const onConfirm = () => {
       if (withInput) {
-        finish(inputEl.value);
+        finish(inputEl ? inputEl.value : "");
       } else {
         finish(true);
       }
@@ -116,43 +131,42 @@ function openAppModal({
     };
 
     const onKeyDown = e => {
-      if (e.key === "Enter" && withInput) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onCancel();
+      } else if (e.key === "Enter" && withInput) {
         e.preventDefault();
         onConfirm();
       }
     };
 
     const onBackdropClick = e => {
-      if (e.target === dialog) {
+      if (e.target === overlay) {
         onCancel();
       }
-    };
-
-    const onDialogClose = () => {
-      onCancel();
     };
 
     function cleanup() {
       confirmBtn.removeEventListener("click", onConfirm);
       cancelBtn.removeEventListener("click", onCancel);
-      inputEl.removeEventListener("keydown", onKeyDown);
-      dialog.removeEventListener("click", onBackdropClick);
-      dialog.removeEventListener("close", onDialogClose);
+      inputEl?.removeEventListener("keydown", onKeyDown);
+      overlay.removeEventListener("click", onBackdropClick);
+      document.removeEventListener("keydown", onKeyDown);
     }
 
     confirmBtn.addEventListener("click", onConfirm);
     cancelBtn.addEventListener("click", onCancel);
-    inputEl.addEventListener("keydown", onKeyDown);
-    dialog.addEventListener("click", onBackdropClick);
-    dialog.addEventListener("close", onDialogClose);
+    inputEl?.addEventListener("keydown", onKeyDown);
+    overlay.addEventListener("click", onBackdropClick);
+    document.addEventListener("keydown", onKeyDown);
 
-    dialog.showModal();
+    openOverlay("appModalOverlay");
 
-    if (withInput) {
-      requestAnimationFrame(() => {
+    if (withInput && inputEl) {
+      setTimeout(() => {
         inputEl.focus();
         inputEl.select();
-      });
+      }, 40);
     }
   });
 }
@@ -199,16 +213,20 @@ function showMessage(id, message) {
 
 function showError(id, error) {
   console.error(error);
-  showMessage(
-    id,
-    error?.message || String(error) || "Something went wrong."
-  );
+  const msg = error?.message || String(error) || "Something went wrong.";
+  showMessage(id, msg);
+  showSnackbar(msg);
 }
 
-function requireUser() {
+async function ensureUser() {
+  if (user?.id) return user;
+  const { data, error } = await db.auth.getSession();
+  if (error) throw error;
+  user = data.session?.user || null;
   if (!user?.id) {
     throw new Error("You are not signed in. Please sign in again.");
   }
+  return user;
 }
 
 function safeFileName(name) {
@@ -408,7 +426,7 @@ function showCalculator() {
    AUTHENTICATION
 ========================================== */
 
-$("signupBtn").addEventListener("click", async () => {
+$("signupBtn")?.addEventListener("click", async () => {
   const email = $("email").value.trim();
   const password = $("accountPassword").value;
 
@@ -446,7 +464,7 @@ $("signupBtn").addEventListener("click", async () => {
   }
 });
 
-$("loginBtn").addEventListener("click", async () => {
+$("loginBtn")?.addEventListener("click", async () => {
   const email = $("email").value.trim();
   const password = $("accountPassword").value;
 
@@ -479,7 +497,7 @@ $("loginBtn").addEventListener("click", async () => {
 
 async function afterLogin() {
   try {
-    requireUser();
+    await ensureUser();
 
     showMessage("authMessage", "Checking your secure PIN...");
 
@@ -500,7 +518,7 @@ async function afterLogin() {
    PIN CREATION AND CHANGE
 ========================================== */
 
-$("pinInput").addEventListener("input", () => {
+$("pinInput")?.addEventListener("input", () => {
   $("pinInput").value =
     $("pinInput").value.replace(/\D/g, "").slice(0, 8);
   updatePinDots();
@@ -531,7 +549,7 @@ document.querySelectorAll("[data-pin-action]").forEach(btn => {
   });
 });
 
-$("pinContinue").addEventListener("click", async () => {
+$("pinContinue")?.addEventListener("click", async () => {
   const pin = $("pinInput").value;
 
   if (!/^\d{4,8}$/.test(pin)) {
@@ -705,16 +723,17 @@ async function openVault() {
   currentFolder = null;
   folderStack = [];
 
+  await ensureUser().catch(() => {});
   populateSettingsAccountInfo();
   showScreen("vaultScreen");
   await loadVault();
 }
 
 /* ==========================================
-   FOLDER NAVIGATION
+   FOLDER NAVIGATION & CREATION
 ========================================== */
 
-$("backBtn").addEventListener("click", async () => {
+$("backBtn")?.addEventListener("click", async () => {
   if (folderStack.length > 0) {
     currentFolder = folderStack.pop();
     await loadVault();
@@ -723,8 +742,8 @@ $("backBtn").addEventListener("click", async () => {
   }
 });
 
-$("addFolderBtn").addEventListener("click", async () => {
-  const name = await showPromptModal({
+async function handleCreateFolder() {
+  const rawName = await showPromptModal({
     eyebrow: "New Folder",
     title: "Create folder",
     description: "Organize your private photos and videos inside a new folder.",
@@ -732,27 +751,34 @@ $("addFolderBtn").addEventListener("click", async () => {
     confirmText: "Create"
   });
 
-  if (!name || !name.trim()) return;
+  if (rawName === null) return;
+  const trimmedName = String(rawName).trim();
+  if (!trimmedName) {
+    showSnackbar("Folder name cannot be empty.");
+    return;
+  }
 
   try {
-    requireUser();
+    const activeUser = await ensureUser();
 
     const { error } = await db
       .from("vault_folders")
       .insert({
-        user_id: user.id,
-        name: name.trim(),
+        user_id: activeUser.id,
+        name: trimmedName,
         parent_id: currentFolder
       });
 
     if (error) throw error;
 
     await loadVault();
-    showSnackbar(`Folder "${name.trim()}" created.`);
+    showSnackbar(`Folder "${trimmedName}" created.`);
   } catch (error) {
     showError("vaultMessage", error);
   }
-});
+}
+
+$("addFolderBtn")?.addEventListener("click", handleCreateFolder);
 
 /* ==========================================
    LOAD FOLDERS AND FILES
@@ -760,14 +786,14 @@ $("addFolderBtn").addEventListener("click", async () => {
 
 async function loadVault() {
   try {
-    requireUser();
+    const activeUser = await ensureUser();
 
     showMessage("vaultMessage", "Loading your files...");
 
     const { data: folders, error: folderError } = await db
       .from("vault_folders")
       .select("id, user_id, name, parent_id, created_at")
-      .eq("user_id", user.id)
+      .eq("user_id", activeUser.id)
       .order("name");
 
     if (folderError) throw folderError;
@@ -775,7 +801,7 @@ async function loadVault() {
     const { data: files, error: fileError } = await db
       .from("vault_files")
       .select("id, user_id, folder_id, file_name, object_path, mime_type, size_bytes, created_at")
-      .eq("user_id", user.id)
+      .eq("user_id", activeUser.id)
       .order("created_at", { ascending: false });
 
     if (fileError) throw fileError;
@@ -945,17 +971,17 @@ async function loadVault() {
    FILE UPLOAD
 ========================================== */
 
-$("uploadBtn").addEventListener("click", () => {
+$("uploadBtn")?.addEventListener("click", () => {
   $("fileInput").click();
 });
 
-$("fileInput").addEventListener("change", async event => {
+$("fileInput")?.addEventListener("change", async event => {
   const selectedFiles = [...event.target.files];
 
   if (!selectedFiles.length) return;
 
   try {
-    requireUser();
+    const activeUser = await ensureUser();
 
     showMessage("vaultMessage", "");
     setUploadProgress(
@@ -986,7 +1012,7 @@ $("fileInput").addEventListener("change", async event => {
       }
 
       const objectPath =
-        `${user.id}/${crypto.randomUUID()}_${safeFileName(file.name)}`;
+        `${activeUser.id}/${crypto.randomUUID()}_${safeFileName(file.name)}`;
 
       const { error: uploadError } = await db.storage
         .from(BUCKET)
@@ -1009,7 +1035,7 @@ $("fileInput").addEventListener("change", async event => {
       const { error: databaseError } = await db
         .from("vault_files")
         .insert({
-          user_id: user.id,
+          user_id: activeUser.id,
           folder_id: currentFolder,
           file_name: file.name,
           object_path: objectPath,
@@ -1089,21 +1115,21 @@ async function previewFile(file) {
     }
 
     content.append(media);
-    $("previewDialog").showModal();
+    openOverlay("previewOverlay");
   } catch (error) {
     showError("vaultMessage", error);
   }
 }
 
-$("closePreviewBtn").addEventListener("click", () => {
+$("closePreviewBtn")?.addEventListener("click", () => {
   const video = $("previewContent")?.querySelector("video");
   if (video) video.pause();
-  $("previewDialog").close();
+  closeOverlay("previewOverlay");
   $("previewContent").replaceChildren();
 });
 
-$("previewDialog")?.addEventListener("click", e => {
-  if (e.target === $("previewDialog")) {
+$("previewOverlay")?.addEventListener("click", e => {
+  if (e.target === $("previewOverlay")) {
     $("closePreviewBtn").click();
   }
 });
@@ -1121,14 +1147,18 @@ async function renameFile(file) {
     confirmText: "Rename"
   });
 
-  if (!newName || !newName.trim() || newName.trim() === file.file_name) return;
+  if (newName === null) return;
+  const trimmed = String(newName).trim();
+  if (!trimmed || trimmed === file.file_name) return;
 
   try {
+    const activeUser = await ensureUser();
+
     const { error } = await db
       .from("vault_files")
-      .update({ file_name: newName.trim() })
+      .update({ file_name: trimmed })
       .eq("id", file.id)
-      .eq("user_id", user.id);
+      .eq("user_id", activeUser.id);
 
     if (error) throw error;
 
@@ -1155,6 +1185,8 @@ async function deleteFile(file) {
   if (!confirmed) return;
 
   try {
+    const activeUser = await ensureUser();
+
     const { error: storageError } = await db.storage
       .from(BUCKET)
       .remove([file.object_path]);
@@ -1165,7 +1197,7 @@ async function deleteFile(file) {
       .from("vault_files")
       .delete()
       .eq("id", file.id)
-      .eq("user_id", user.id);
+      .eq("user_id", activeUser.id);
 
     if (error) throw error;
 
@@ -1189,14 +1221,18 @@ async function renameFolder(folder) {
     confirmText: "Rename"
   });
 
-  if (!name || !name.trim() || name.trim() === folder.name) return;
+  if (name === null) return;
+  const trimmed = String(name).trim();
+  if (!trimmed || trimmed === folder.name) return;
 
   try {
+    const activeUser = await ensureUser();
+
     const { error } = await db
       .from("vault_folders")
-      .update({ name: name.trim() })
+      .update({ name: trimmed })
       .eq("id", folder.id)
-      .eq("user_id", user.id);
+      .eq("user_id", activeUser.id);
 
     if (error) throw error;
 
@@ -1213,6 +1249,8 @@ async function renameFolder(folder) {
 
 async function deleteFolder(folder) {
   try {
+    const activeUser = await ensureUser();
+
     const { count: folderCount, error: folderError } = await db
       .from("vault_folders")
       .select("id", { count: "exact", head: true })
@@ -1247,7 +1285,7 @@ async function deleteFolder(folder) {
       .from("vault_folders")
       .delete()
       .eq("id", folder.id)
-      .eq("user_id", user.id);
+      .eq("user_id", activeUser.id);
 
     if (error) throw error;
 
@@ -1262,29 +1300,32 @@ async function deleteFolder(folder) {
    SETTINGS, SIGN OUT & DELETE ACCOUNT
 ========================================== */
 
-$("settingsBtn").addEventListener("click", () => {
+async function handleOpenSettings() {
+  await ensureUser().catch(() => {});
   populateSettingsAccountInfo();
-  $("settingsDialog").showModal();
+  openOverlay("settingsOverlay");
+}
+
+$("settingsBtn")?.addEventListener("click", handleOpenSettings);
+
+$("closeSettingsBtn")?.addEventListener("click", () => {
+  closeOverlay("settingsOverlay");
 });
 
-$("closeSettingsBtn").addEventListener("click", () => {
-  $("settingsDialog").close();
-});
-
-$("settingsDialog")?.addEventListener("click", e => {
-  if (e.target === $("settingsDialog")) {
-    $("settingsDialog").close();
+$("settingsOverlay")?.addEventListener("click", e => {
+  if (e.target === $("settingsOverlay")) {
+    closeOverlay("settingsOverlay");
   }
 });
 
-$("changePinBtn").addEventListener("click", () => {
-  $("settingsDialog").close();
+$("changePinBtn")?.addEventListener("click", () => {
+  closeOverlay("settingsOverlay");
   currentPinForChange = "";
   showPinSetup("verifyCurrent");
 });
 
 async function handleSignOut() {
-  if ($("settingsDialog")?.open) $("settingsDialog").close();
+  closeOverlay("settingsOverlay");
 
   const confirmed = await showConfirmModal({
     eyebrow: "Account Session",
@@ -1310,7 +1351,7 @@ async function handleSignOut() {
 }
 
 async function handleDeleteAccount() {
-  if ($("settingsDialog")?.open) $("settingsDialog").close();
+  closeOverlay("settingsOverlay");
 
   const confirmed = await showConfirmModal({
     eyebrow: "Permanent Account Deletion",
@@ -1323,12 +1364,11 @@ async function handleDeleteAccount() {
   if (!confirmed) return;
 
   try {
-    requireUser();
-    const targetUserId = user.id;
+    const activeUser = await ensureUser();
+    const targetUserId = activeUser.id;
 
     showSnackbar("Deleting all files, folders, and account data...", 8000);
 
-    // 1. Fetch all file records for this user to purge storage objects
     const { data: userFiles, error: fetchFilesError } = await db
       .from("vault_files")
       .select("id, object_path")
@@ -1336,7 +1376,6 @@ async function handleDeleteAccount() {
 
     if (fetchFilesError) throw fetchFilesError;
 
-    // 2. Remove every file from Supabase Storage ("vault-files")
     const pathsToRemove = (userFiles || [])
       .map(f => f.object_path)
       .filter(Boolean);
@@ -1349,7 +1388,6 @@ async function handleDeleteAccount() {
       if (storageRemoveError) throw storageRemoveError;
     }
 
-    // Also list any orphaned objects under userId/ folder in storage
     const { data: listedObjects } = await db.storage
       .from(BUCKET)
       .list(targetUserId, { limit: 1000 });
@@ -1363,7 +1401,6 @@ async function handleDeleteAccount() {
       }
     }
 
-    // 3. Delete all file rows in "vault_files"
     const { error: deleteFilesError } = await db
       .from("vault_files")
       .delete()
@@ -1371,7 +1408,6 @@ async function handleDeleteAccount() {
 
     if (deleteFilesError) throw deleteFilesError;
 
-    // 4. Delete all folder rows in "vault_folders" (child folders first, then root)
     let remainingFolders = true;
     let safetyPasses = 0;
     while (remainingFolders && safetyPasses < 20) {
@@ -1406,21 +1442,18 @@ async function handleDeleteAccount() {
       if (delFolderErr) throw delFolderErr;
     }
 
-    // 5. Attempt cloud PIN cleanup via Edge Function if supported
     try {
       await callPinFunction({ action: "delete" });
     } catch (_) {
       // Ignore if Edge Function only exposes status/setup/verify/change
     }
 
-    // 6. Attempt auth user deletion RPC if configured on Supabase
     try {
       await db.rpc("delete_user");
     } catch (_) {
       // Proceed to sign out even if RPC is not deployed
     }
 
-    // 7. Sign out and return to Sign In screen
     await db.auth.signOut();
     resetClientSessionState();
     showScreen("authScreen");
@@ -1432,8 +1465,8 @@ async function handleDeleteAccount() {
   }
 }
 
-$("signOutBtn").addEventListener("click", handleSignOut);
-$("deleteAccountBtn").addEventListener("click", handleDeleteAccount);
+$("signOutBtn")?.addEventListener("click", handleSignOut);
+$("deleteAccountBtn")?.addEventListener("click", handleDeleteAccount);
 
 /* ==========================================
    APP STARTUP
