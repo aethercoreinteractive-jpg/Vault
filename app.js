@@ -770,8 +770,15 @@ async function loadVault() {
       card.setAttribute("tabindex", "0");
       card.setAttribute("aria-label", file.file_name);
 
-      const isVideo = file.mime_type?.startsWith("video/");
-      const isImage = file.mime_type?.startsWith("image/");
+      const lowerName = (file.file_name || "").toLowerCase();
+      const mime = (file.mime_type || "").toLowerCase();
+      const isVideo =
+        mime.startsWith("video/") ||
+        /\.(mp4|webm|mov|m4v|mkv|avi|3gp)$/.test(lowerName);
+      const isImage =
+        !isVideo &&
+        (mime.startsWith("image/") ||
+          /\.(jpg|jpeg|png|gif|webp|bmp|svg|avif|heic)$/.test(lowerName));
 
       const fallback = document.createElement("span");
       fallback.className = "gallery-placeholder";
@@ -781,34 +788,38 @@ async function loadVault() {
       if (file.object_path) {
         db.storage
           .from(BUCKET)
-          .createSignedUrl(file.object_path, 300)
+          .createSignedUrl(file.object_path, 3600)
           .then(({ data, error }) => {
-            if (!error && data?.signedUrl && card.isConnected) {
-              if (isImage) {
-                const img = document.createElement("img");
-                img.className = "gallery-media";
-                img.alt = file.file_name;
-                img.loading = "lazy";
-                img.onload = () => {
-                  fallback.remove();
-                  card.prepend(img);
-                };
-                img.src = data.signedUrl;
-              } else if (isVideo) {
-                const vid = document.createElement("video");
-                vid.className = "gallery-media";
-                vid.muted = true;
-                vid.playsInline = true;
-                vid.preload = "metadata";
-                vid.onloadeddata = () => {
+            if (error || !data?.signedUrl || !card.isConnected) return;
+
+            if (isImage) {
+              const img = document.createElement("img");
+              img.className = "gallery-media";
+              img.alt = file.file_name;
+              img.loading = "lazy";
+              img.onload = () => {
+                fallback.remove();
+                card.prepend(img);
+              };
+              img.src = data.signedUrl;
+            } else if (isVideo) {
+              const vid = document.createElement("video");
+              vid.className = "gallery-media";
+              vid.muted = true;
+              vid.playsInline = true;
+              vid.preload = "metadata";
+              const showFrame = () => {
+                if (vid.parentNode !== card) {
                   fallback.remove();
                   card.prepend(vid);
-                };
-                vid.src = data.signedUrl;
-              }
+                }
+              };
+              vid.onloadedmetadata = showFrame;
+              vid.onloadeddata = showFrame;
+              vid.src = `${data.signedUrl}#t=0.1`;
             }
           })
-          .catch(() => {});
+          .catch(err => console.error("Thumbnail error:", err));
       }
 
       if (isVideo) {
