@@ -763,6 +763,23 @@ async function loadVault() {
       list.append(item);
     });
 
+    const signedUrlMap = new Map();
+    const validPaths = fileItems.map(f => f.object_path).filter(Boolean);
+
+    if (validPaths.length > 0) {
+      const { data: signedList, error: batchErr } = await db.storage
+        .from(BUCKET)
+        .createSignedUrls(validPaths, 3600);
+
+      if (!batchErr && Array.isArray(signedList)) {
+        signedList.forEach(entry => {
+          if (entry?.path && entry?.signedUrl) {
+            signedUrlMap.set(entry.path, entry.signedUrl);
+          }
+        });
+      }
+    }
+
     fileItems.forEach((file, index) => {
       const card = document.createElement("div");
       card.className = "media-card";
@@ -785,41 +802,58 @@ async function loadVault() {
       fallback.textContent = isVideo ? "🎬" : "🖼️";
       card.append(fallback);
 
-      if (file.object_path) {
-        db.storage
-          .from(BUCKET)
-          .createSignedUrl(file.object_path, 3600)
-          .then(({ data, error }) => {
-            if (error || !data?.signedUrl || !card.isConnected) return;
+      const attachMediaUrl = signedUrl => {
+        if (!signedUrl || !card.isConnected) return;
 
-            if (isImage) {
-              const img = document.createElement("img");
-              img.className = "gallery-media";
-              img.alt = file.file_name;
-              img.loading = "lazy";
-              img.onload = () => {
-                fallback.remove();
-                card.prepend(img);
-              };
-              img.src = data.signedUrl;
-            } else if (isVideo) {
-              const vid = document.createElement("video");
-              vid.className = "gallery-media";
-              vid.muted = true;
-              vid.playsInline = true;
-              vid.preload = "metadata";
-              const showFrame = () => {
-                if (vid.parentNode !== card) {
-                  fallback.remove();
-                  card.prepend(vid);
-                }
-              };
-              vid.onloadedmetadata = showFrame;
-              vid.onloadeddata = showFrame;
-              vid.src = `${data.signedUrl}#t=0.1`;
-            }
-          })
-          .catch(err => console.error("Thumbnail error:", err));
+        if (isImage) {
+          const img = document.createElement("img");
+          img.className = "gallery-media hidden";
+          img.alt = file.file_name;
+          img.decoding = "async";
+          img.onload = () => {
+            fallback.remove();
+            img.classList.remove("hidden");
+          };
+          img.onerror = () => {
+            img.remove();
+          };
+          card.prepend(img);
+          img.src = signedUrl;
+        } else if (isVideo) {
+          const vid = document.createElement("video");
+          vid.className = "gallery-media hidden";
+          vid.muted = true;
+          vid.playsInline = true;
+          vid.preload = "metadata";
+          const showFrame = () => {
+            fallback.remove();
+            vid.classList.remove("hidden");
+          };
+          vid.onloadedmetadata = showFrame;
+          vid.onloadeddata = showFrame;
+          vid.onerror = () => {
+            vid.remove();
+          };
+          card.prepend(vid);
+          vid.src = `${signedUrl}#t=0.1`;
+        }
+      };
+
+      if (file.object_path) {
+        const cachedUrl = signedUrlMap.get(file.object_path);
+        if (cachedUrl) {
+          attachMediaUrl(cachedUrl);
+        } else {
+          db.storage
+            .from(BUCKET)
+            .createSignedUrl(file.object_path, 3600)
+            .then(({ data, error }) => {
+              if (!error && data?.signedUrl) {
+                attachMediaUrl(data.signedUrl);
+              }
+            })
+            .catch(() => {});
+        }
       }
 
       if (isVideo) {
