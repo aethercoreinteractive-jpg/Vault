@@ -1,13 +1,13 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-  <meta name="theme-color" content="#101116">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0B0D10">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>Calculator Vault</title>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>My Vault</title>
 
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -16,16 +16,28 @@
   <style>
     :root {
       color-scheme: dark;
-      --bg: #101116;
-      --surface: #1b1d27;
-      --surface2: #252936;
-      --surface3: #303747;
-      --accent: #80aaff;
-      --accent-dark: #3478e5;
-      --text: #f5f5fa;
-      --muted: #a8adbd;
-      --border: rgba(255,255,255,.08);
-      --danger: #ff7777;
+      --bg: #0B0D10;
+      --surface: #14181F;
+      --surface-container: #1C212B;
+      --surface-high: #252C3A;
+      --surface-highest: #2F3748;
+      --primary: #8AB4F8;
+      --primary-container: #1A3A6E;
+      --on-primary-container: #D3E3FD;
+      --accent-action: #3B78E7;
+      --accent-action-hover: #4C87F5;
+      --text: #ECEEF2;
+      --text-secondary: #9CA3B2;
+      --outline: rgba(236, 238, 242, 0.10);
+      --outline-strong: rgba(236, 238, 242, 0.18);
+      --danger: #F28B82;
+      --danger-container: rgba(242, 139, 130, 0.14);
+      --warning: #FBC02D;
+      --radius-xl: 28px;
+      --radius-lg: 22px;
+      --radius-md: 16px;
+      --radius-sm: 12px;
+      --radius-full: 9999px;
     }
 
     * {
@@ -33,17 +45,23 @@
       -webkit-tap-highlight-color: transparent;
     }
 
-    html, body {
-      margin: 0;
-      min-height: 100%;
+    html {
       background: var(--bg);
-      color: var(--text);
-      font-family: Inter, Roboto, "Segoe UI", sans-serif;
-      overscroll-behavior: none;
+      overflow-x: hidden;
+      height: 100%;
     }
 
     body {
+      margin: 0;
       min-height: 100dvh;
+      width: 100%;
+      max-width: 100vw;
+      overflow-x: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Roboto", "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      overscroll-behavior-y: none;
+      -webkit-font-smoothing: antialiased;
     }
 
     button, input {
@@ -53,6 +71,7 @@
     button {
       cursor: pointer;
       touch-action: manipulation;
+      user-select: none;
     }
 
     .hidden {
@@ -62,295 +81,497 @@
     .screen {
       min-height: 100dvh;
       width: 100%;
+      max-width: 100vw;
+      overflow-x: hidden;
+      animation: screenFadeIn 0.2s cubic-bezier(0.2, 0, 0, 1);
     }
 
-    .app-shell {
-      width: 100%;
-      max-width: 520px;
-      min-height: 100dvh;
-      margin: auto;
-      padding: 22px 20px calc(30px + env(safe-area-inset-bottom));
+    @keyframes screenFadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(6px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
 
-    .eyebrow {
-      color: var(--accent);
-      font-size: 12px;
+    /* M3 Surfaces & Typography */
+    .m3-eyebrow {
+      color: var(--primary);
+      font-size: 11px;
       font-weight: 700;
-      letter-spacing: 2px;
+      letter-spacing: 0.11em;
       text-transform: uppercase;
     }
 
-    .muted {
-      color: var(--muted);
+    .m3-muted {
+      color: var(--text-secondary);
     }
 
-    .panel {
+    .m3-card {
       background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 25px;
-      padding: 24px;
-      box-shadow: 0 12px 40px rgba(0,0,0,.16);
+      border: 1px solid var(--outline);
+      border-radius: var(--radius-xl);
+      box-shadow: 0 14px 36px rgba(0, 0, 0, 0.42);
+    }
+
+    .m3-tonal-box {
+      background: var(--surface-container);
+      border: 1px solid var(--outline);
+      border-radius: var(--radius-lg);
     }
 
     .field {
       width: 100%;
-      min-height: 58px;
-      padding: 0 17px;
-      border-radius: 17px;
-      border: 1px solid #393e4d;
-      background: #131620;
-      color: white;
+      min-height: 56px;
+      padding: 0 18px;
+      border-radius: var(--radius-md);
+      border: 1.5px solid var(--outline-strong);
+      background: var(--surface-container);
+      color: var(--text);
       outline: none;
       font-size: 16px;
-      transition: border .2s;
+      transition: border-color 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease;
+    }
+
+    .field::placeholder {
+      color: var(--text-secondary);
+      opacity: 0.78;
     }
 
     .field:focus {
-      border-color: var(--accent);
+      border-color: var(--primary);
+      background: var(--surface-high);
+      box-shadow: 0 0 0 3px rgba(138, 180, 248, 0.14);
     }
 
     .primary-btn {
-      min-height: 58px;
+      min-height: 54px;
       width: 100%;
       border: 0;
-      border-radius: 18px;
-      background: var(--accent-dark);
-      color: white;
-      font-weight: 650;
-      font-size: 16px;
-      transition: transform .15s, opacity .15s;
+      border-radius: var(--radius-full);
+      background: var(--accent-action);
+      color: #FFFFFF;
+      font-weight: 600;
+      font-size: 15.5px;
+      letter-spacing: 0.01em;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: transform 0.12s cubic-bezier(0.2, 0, 0, 1), background-color 0.15s ease, opacity 0.15s ease;
     }
 
-    .primary-btn:active,
-    .secondary-btn:active,
-    .key:active {
-      transform: scale(.97);
+    .primary-btn:hover:not(:disabled) {
+      background: var(--accent-action-hover);
     }
 
-    .primary-btn:disabled {
-      opacity: .55;
+    .primary-btn:active:not(:disabled),
+    .secondary-btn:active:not(:disabled),
+    .icon-btn:active:not(:disabled),
+    .key:active:not(:disabled),
+    .pin-key:active:not(:disabled) {
+      transform: scale(0.95);
+    }
+
+    .primary-btn:disabled,
+    .secondary-btn:disabled {
+      opacity: 0.48;
       cursor: not-allowed;
     }
 
     .secondary-btn {
-      min-height: 52px;
-      padding: 0 18px;
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      background: var(--surface2);
-      color: white;
+      min-height: 50px;
+      padding: 0 20px;
+      border: 1px solid var(--outline-strong);
+      border-radius: var(--radius-full);
+      background: var(--surface-container);
+      color: var(--text);
       font-weight: 600;
-      transition: transform .15s;
+      font-size: 14.5px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: transform 0.12s cubic-bezier(0.2, 0, 0, 1), background-color 0.15s ease;
     }
 
-    .small-btn {
-      min-height: 42px;
-      padding: 0 13px;
-      border: 1px solid var(--border);
-      border-radius: 13px;
-      background: var(--surface3);
-      color: white;
-      font-size: 13px;
+    .secondary-btn:hover:not(:disabled) {
+      background: var(--surface-high);
+    }
+
+    .icon-btn {
+      width: 46px;
+      height: 46px;
+      min-width: 46px;
+      border-radius: var(--radius-full);
+      border: 1px solid var(--outline);
+      background: var(--surface-container);
+      color: var(--text);
+      display: grid;
+      place-items: center;
+      font-size: 18px;
+      transition: transform 0.12s cubic-bezier(0.2, 0, 0, 1), background-color 0.15s ease;
+    }
+
+    .icon-btn:hover {
+      background: var(--surface-high);
+    }
+
+    .danger-btn {
+      min-height: 50px;
+      width: 100%;
+      border: 1px solid rgba(242, 139, 130, 0.28);
+      border-radius: var(--radius-full);
+      background: var(--danger-container);
+      color: var(--danger);
       font-weight: 600;
+      font-size: 15px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: transform 0.12s cubic-bezier(0.2, 0, 0, 1), background-color 0.15s ease;
+    }
+
+    .danger-btn:active {
+      transform: scale(0.96);
     }
 
     .message {
-      min-height: 22px;
-      color: #ffbf79;
-      font-size: 14px;
-      line-height: 1.5;
+      min-height: 20px;
+      color: var(--primary);
+      font-size: 13.5px;
+      font-weight: 500;
+      line-height: 1.45;
       overflow-wrap: anywhere;
     }
 
-    /* AUTH */
+    /* ==========================================
+       1. AUTH SCREEN
+    ========================================== */
 
-    .auth-layout {
+    .auth-wrapper {
+      min-height: 100dvh;
+      width: 100%;
       display: flex;
-      align-items: center;
+      flex-direction: column;
       justify-content: center;
+      padding: calc(20px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));
     }
 
     .auth-card {
       width: 100%;
-      max-width: 430px;
-      padding: 30px 24px;
+      max-width: 440px;
+      margin: 0 auto;
+      padding: 28px 22px;
     }
 
-    .brand-icon {
-      width: 58px;
-      height: 58px;
+    .auth-badge {
+      width: 56px;
+      height: 56px;
+      border-radius: 18px;
+      background: var(--primary-container);
+      color: var(--on-primary-container);
       display: grid;
       place-items: center;
-      border-radius: 19px;
-      background: #263958;
-      color: #a9c8ff;
-      font-size: 27px;
-      margin-bottom: 22px;
+      margin-bottom: 18px;
     }
 
-    /* PIN */
+    /* ==========================================
+       2. PIN SCREEN + KEYPAD
+    ========================================== */
 
-    .pin-layout {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .pin-card {
+    .pin-wrapper {
+      min-height: 100dvh;
       width: 100%;
-      max-width: 420px;
-      text-align: center;
+      max-width: 440px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: calc(18px + env(safe-area-inset-top)) 18px calc(20px + env(safe-area-inset-bottom));
+      gap: 16px;
     }
 
-    .pin-lock {
-      width: 76px;
-      height: 76px;
-      margin: 0 auto 24px;
+    .pin-header {
+      text-align: center;
+      padding-top: 8px;
+    }
+
+    .pin-lock-badge {
+      width: 60px;
+      height: 60px;
+      margin: 0 auto 14px;
+      border-radius: 20px;
+      background: var(--primary-container);
+      color: var(--on-primary-container);
       display: grid;
       place-items: center;
-      border-radius: 26px;
-      background: #253652;
-      color: #a9c8ff;
-      font-size: 32px;
+    }
+
+    .pin-dots {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin: 18px 0 10px;
+    }
+
+    .pin-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: var(--radius-full);
+      border: 2px solid var(--outline-strong);
+      background: transparent;
+      transition: transform 0.14s ease, background-color 0.14s ease, border-color 0.14s ease;
+    }
+
+    .pin-dot.filled {
+      background: var(--primary);
+      border-color: var(--primary);
+      transform: scale(1.12);
     }
 
     .pin-input {
       text-align: center;
-      font-size: 25px;
+      font-size: 24px;
       letter-spacing: 10px;
       font-weight: 700;
+      min-height: 52px;
     }
 
-    /* CALCULATOR */
+    .pin-keypad {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      width: 100%;
+    }
 
-    .calculator-layout {
+    .pin-key {
+      height: clamp(58px, 14.5vw, 68px);
+      border-radius: var(--radius-full);
+      border: 1px solid var(--outline);
+      background: var(--surface-container);
+      color: var(--text);
+      font-size: 22px;
+      font-weight: 500;
+      display: grid;
+      place-items: center;
+      transition: transform 0.11s cubic-bezier(0.2, 0, 0, 1), background-color 0.14s ease;
+    }
+
+    .pin-key:hover {
+      background: var(--surface-high);
+    }
+
+    .pin-key.secondary-key {
+      background: var(--surface);
+      color: var(--text-secondary);
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    /* ==========================================
+       3. CALCULATOR SCREEN (ANDROID 15 STYLE)
+    ========================================== */
+
+    .calc-wrapper {
+      min-height: 100dvh;
+      width: 100%;
+      max-width: 480px;
+      margin: 0 auto;
       display: flex;
       flex-direction: column;
-      max-width: 480px;
-      min-height: 100dvh;
-      margin: auto;
-      padding: 22px 20px calc(24px + env(safe-area-inset-bottom));
+      justify-content: space-between;
+      padding: calc(14px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
     }
 
-    .calculator-top {
+    .calc-topbar {
       display: flex;
       align-items: center;
       justify-content: space-between;
+      padding: 4px 6px;
     }
 
-    .calculator-display {
+    .calc-pill {
+      padding: 6px 12px;
+      border-radius: var(--radius-full);
+      background: var(--surface-container);
+      border: 1px solid var(--outline);
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .calc-display-area {
       flex: 1;
-      min-height: 190px;
+      min-height: 150px;
       display: flex;
       flex-direction: column;
       justify-content: flex-end;
       align-items: flex-end;
-      padding: 28px 8px 30px;
+      padding: 20px 8px 22px;
+      gap: 6px;
       overflow: hidden;
     }
 
     #expression {
-      min-height: 25px;
-      color: var(--muted);
-      font-size: 16px;
-      overflow-wrap: anywhere;
+      min-height: 26px;
+      max-width: 100%;
+      color: var(--text-secondary);
+      font-size: 18px;
+      font-weight: 400;
       text-align: right;
+      overflow-wrap: anywhere;
     }
 
     #display {
       width: 100%;
-      color: white;
-      font-size: clamp(42px, 12vw, 68px);
-      font-weight: 350;
+      color: var(--text);
+      font-size: clamp(46px, 13vw, 72px);
+      font-weight: 300;
+      letter-spacing: -0.02em;
+      line-height: 1.12;
       text-align: right;
       overflow-wrap: anywhere;
-      line-height: 1.2;
     }
 
     .keypad {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 11px;
+      gap: 10px;
+      width: 100%;
     }
 
     .key {
-      height: clamp(66px, 17vw, 82px);
+      height: clamp(64px, 16.5vw, 78px);
       border: 0;
-      border-radius: 23px;
-      background: var(--surface2);
-      color: white;
+      border-radius: var(--radius-full);
+      background: var(--surface-container);
+      color: var(--text);
       font-size: 24px;
-      font-weight: 500;
-      transition: transform .12s, background .12s;
+      font-weight: 400;
+      display: grid;
+      place-items: center;
+      transition: transform 0.1s cubic-bezier(0.2, 0, 0, 1), background-color 0.14s ease;
+    }
+
+    .key:hover {
+      background: var(--surface-high);
     }
 
     .key.utility {
-      background: #30394a;
-      color: #b9d0ff;
+      background: var(--surface-highest);
+      color: var(--text);
+      font-size: 19px;
+      font-weight: 500;
     }
 
     .key.operator {
-      background: #283a59;
-      color: #b9d0ff;
+      background: var(--primary-container);
+      color: var(--on-primary-container);
+      font-size: 25px;
+      font-weight: 500;
     }
 
     .key.equals {
-      background: var(--accent-dark);
-      color: white;
+      grid-column: span 4;
+      height: 58px;
+      border-radius: var(--radius-full);
+      background: var(--accent-action);
+      color: #FFFFFF;
+      font-size: 28px;
+      font-weight: 500;
     }
 
-    /* VAULT */
+    .key.equals:hover {
+      background: var(--accent-action-hover);
+    }
 
-    .vault-layout {
+    /* ==========================================
+       4. PRIVATE VAULT SCREEN
+    ========================================== */
+
+    .vault-wrapper {
       width: 100%;
-      max-width: 600px;
+      max-width: 720px;
       min-height: 100dvh;
-      margin: auto;
-      padding-bottom: calc(28px + env(safe-area-inset-bottom));
+      margin: 0 auto;
+      padding-bottom: calc(92px + env(safe-area-inset-bottom));
     }
 
-    .vault-header {
-      padding: 23px 20px 20px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
+    .vault-appbar {
       position: sticky;
       top: 0;
-      z-index: 5;
+      z-index: 10;
+      background: rgba(11, 13, 16, 0.88);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border-bottom: 1px solid var(--outline);
+      padding: calc(14px + env(safe-area-inset-top)) 16px 14px;
     }
 
-    .vault-header-row {
+    .vault-appbar-inner {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
+      gap: 10px;
     }
 
-    .vault-main {
-      padding: 22px 18px;
+    .vault-body {
+      padding: 18px 16px 24px;
     }
 
-    .upload-button {
+    .upload-fab-btn {
       width: 100%;
-      min-height: 62px;
+      min-height: 58px;
       border: 0;
-      border-radius: 19px;
-      background: var(--accent-dark);
-      color: white;
-      font-size: 17px;
-      font-weight: 650;
+      border-radius: var(--radius-lg);
+      background: var(--accent-action);
+      color: #FFFFFF;
+      font-size: 16px;
+      font-weight: 600;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 10px;
+      box-shadow: 0 8px 24px rgba(59, 120, 231, 0.28);
+      transition: transform 0.12s cubic-bezier(0.2, 0, 0, 1), background-color 0.15s ease;
     }
 
-    .vault-section-title {
-      margin: 27px 2px 14px;
-      color: var(--muted);
-      font-size: 13px;
-      font-weight: 700;
-      letter-spacing: 1.1px;
-      text-transform: uppercase;
+    .upload-fab-btn:hover {
+      background: var(--accent-action-hover);
+    }
+
+    .upload-fab-btn:active {
+      transform: scale(0.98);
+    }
+
+    .upload-progress-card {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: var(--radius-md);
+      background: var(--surface-container);
+      border: 1px solid var(--outline);
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 6px;
+      border-radius: var(--radius-full);
+      background: var(--surface-highest);
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: var(--radius-full);
+      background: var(--primary);
+      transition: width 0.25s ease;
     }
 
     #fileList {
@@ -363,192 +584,271 @@
       min-width: 0;
       display: flex;
       flex-direction: column;
+      justify-content: space-between;
       gap: 10px;
-      padding: 14px;
-      border: 1px solid var(--border);
-      border-radius: 19px;
+      padding: 12px;
+      border-radius: var(--radius-lg);
       background: var(--surface);
+      border: 1px solid var(--outline);
       overflow: hidden;
+      transition: border-color 0.15s ease, transform 0.14s ease;
+    }
+
+    .file-item:hover {
+      border-color: var(--outline-strong);
     }
 
     .file-icon {
       width: 100%;
-      height: 95px;
+      height: 112px;
+      border-radius: var(--radius-md);
+      background: var(--surface-container);
       display: grid;
       place-items: center;
-      border-radius: 14px;
-      background: var(--surface2);
-      font-size: 39px;
+      font-size: 36px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .file-thumb {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .file-badge {
+      position: absolute;
+      bottom: 6px;
+      right: 6px;
+      padding: 2px 7px;
+      border-radius: var(--radius-full);
+      background: rgba(11, 13, 16, 0.78);
+      color: var(--text);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
     }
 
     .file-info {
       min-width: 0;
       font-size: 14px;
-      font-weight: 650;
-      line-height: 1.4;
+      font-weight: 600;
+      line-height: 1.35;
+      color: var(--text);
       overflow-wrap: anywhere;
     }
 
-    .file-item button {
-      min-height: 36px;
-      padding: 0 9px;
-      border: 1px solid var(--border);
-      border-radius: 11px;
-      background: var(--surface2);
-      color: white;
-      font-size: 12px;
-      font-weight: 600;
+    .file-meta {
+      font-size: 11.5px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-top: 3px;
     }
 
-    .file-item button:active {
-      background: var(--surface3);
-    }
-
-    .file-item .file-actions {
+    .file-actions {
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
+      margin-top: 2px;
     }
 
-    .file-item .file-actions button {
-      flex: 1;
+    .file-item button {
+      flex: 1 1 auto;
+      min-width: 56px;
+      min-height: 36px;
+      padding: 0 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--outline);
+      background: var(--surface-container);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+      transition: background-color 0.14s ease, transform 0.1s ease;
     }
 
-    .file-item:has(.file-icon) {
-      position: relative;
+    .file-item button:hover {
+      background: var(--surface-high);
+    }
+
+    .file-item button:active {
+      transform: scale(0.96);
     }
 
     .empty-state {
       grid-column: 1 / -1;
-      padding: 45px 18px;
+      padding: 48px 20px;
       text-align: center;
-      border: 1px dashed #454b5b;
+      border-radius: var(--radius-xl);
+      background: var(--surface);
+      border: 1px dashed var(--outline-strong);
+      color: var(--text-secondary);
+    }
+
+    .empty-icon-wrap {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 14px;
       border-radius: 20px;
-      color: var(--muted);
+      background: var(--surface-container);
+      color: var(--primary);
+      display: grid;
+      place-items: center;
     }
 
-    .empty-icon {
-      font-size: 38px;
-      margin-bottom: 12px;
-    }
-
+    /* Vault Navigation Bar */
     .vault-bottom {
       position: fixed;
       bottom: 0;
       left: 0;
       right: 0;
-      z-index: 6;
+      z-index: 12;
       display: flex;
       justify-content: center;
-      padding: 10px 18px calc(10px + env(safe-area-inset-bottom));
-      background: rgba(16,17,22,.94);
-      border-top: 1px solid var(--border);
-      backdrop-filter: blur(16px);
+      padding: 10px 16px calc(12px + env(safe-area-inset-bottom));
+      background: rgba(20, 24, 31, 0.92);
+      border-top: 1px solid var(--outline);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
     }
 
     .vault-bottom-inner {
       width: 100%;
-      max-width: 560px;
+      max-width: 688px;
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 10px;
     }
 
-    .vault-bottom button {
-      min-height: 47px;
-      border: 1px solid var(--border);
-      border-radius: 15px;
-      background: var(--surface2);
-      color: white;
+    .vault-nav-btn {
+      min-height: 48px;
+      border-radius: var(--radius-full);
+      border: 1px solid var(--outline);
+      background: var(--surface-container);
+      color: var(--text);
       font-size: 14px;
       font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: background-color 0.15s ease, transform 0.12s ease;
     }
 
-    /* DIALOGS */
+    .vault-nav-btn:hover {
+      background: var(--surface-high);
+    }
+
+    .vault-nav-btn:active {
+      transform: scale(0.97);
+    }
+
+    /* ==========================================
+       DIALOGS & MEDIA VIEWER
+    ========================================== */
 
     dialog {
-      width: calc(100% - 32px);
-      max-width: 420px;
+      width: calc(100% - 24px);
+      max-width: 440px;
+      max-height: calc(100dvh - 32px);
+      margin: auto;
       padding: 0;
-      border: 1px solid #3b4050;
-      border-radius: 25px;
+      border: 1px solid var(--outline-strong);
+      border-radius: var(--radius-xl);
       background: var(--surface);
-      color: white;
-      box-shadow: 0 25px 90px rgba(0,0,0,.6);
+      color: var(--text);
+      box-shadow: 0 28px 80px rgba(0, 0, 0, 0.72);
+      overflow-y: auto;
     }
 
     dialog::backdrop {
-      background: rgba(0,0,0,.72);
-      backdrop-filter: blur(5px);
+      background: rgba(0, 0, 0, 0.76);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+    }
+
+    #previewDialog {
+      max-width: 720px;
+      background: #0B0D10;
     }
 
     .dialog-inner {
-      padding: 23px;
+      padding: 22px;
     }
 
     .dialog-title {
-      font-size: 22px;
-      font-weight: 750;
-      margin-bottom: 8px;
+      font-size: 21px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
     }
 
     #previewContent {
       width: 100%;
-      max-height: 65dvh;
+      min-height: 220px;
+      max-height: 70dvh;
       overflow: auto;
-      display: grid;
-      place-items: center;
-      background: #101116;
-      border-radius: 16px;
-      margin: 16px 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0B0D10;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--outline);
+      margin-top: 16px;
+      padding: 8px;
     }
 
     #previewContent img,
     #previewContent video {
       max-width: 100%;
-      max-height: 65dvh;
+      max-height: 66dvh;
+      width: auto;
+      height: auto;
+      border-radius: var(--radius-md);
       object-fit: contain;
     }
 
     @media (min-width: 600px) {
-      .vault-layout {
-        padding-top: 20px;
+      .vault-wrapper {
+        padding-top: 18px;
+        padding-bottom: 36px;
       }
 
-      .vault-header {
-        border: 1px solid var(--border);
-        border-radius: 22px;
-        margin: 0 18px;
+      .vault-appbar {
         position: static;
-      }
-
-      .vault-main {
-        padding-top: 25px;
+        border: 1px solid var(--outline);
+        border-radius: var(--radius-xl);
+        margin: 0 16px;
+        padding: 16px 20px;
       }
 
       #fileList {
         grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
       }
 
       .vault-bottom {
         position: static;
         background: transparent;
         border: 0;
+        backdrop-filter: none;
+        padding: 8px 16px 24px;
       }
     }
 
     @media (max-width: 360px) {
-      .app-shell {
-        padding-left: 15px;
-        padding-right: 15px;
+      .auth-card,
+      .dialog-inner {
+        padding: 20px 16px;
       }
 
-      .keypad {
+      .keypad,
+      .pin-keypad {
         gap: 8px;
       }
 
       .key {
-        border-radius: 18px;
+        height: 60px;
+        font-size: 21px;
       }
 
       #fileList {
@@ -560,174 +860,225 @@
 
 <body>
 
-  <!-- AUTH SCREEN -->
-  <section id="authScreen" class="screen auth-layout">
-    <div class="app-shell auth-layout">
-      <div class="panel auth-card">
-        <div class="brand-icon">▦</div>
-
-        <div class="eyebrow">Private storage</div>
-        <h1 class="text-3xl font-bold mt-3">Calculator Vault</h1>
-        <p class="muted mt-2 mb-8">Your private space, secured in the cloud.</p>
-
-        <div class="space-y-4">
-          <input
-            id="email"
-            class="field"
-            type="email"
-            placeholder="Email address"
-            autocomplete="email"
-          >
-
-          <input
-            id="accountPassword"
-            class="field"
-            type="password"
-            placeholder="Password"
-            autocomplete="current-password"
-          >
-
-          <button id="signupBtn" class="primary-btn">
-            Create account
-          </button>
-
-          <button id="loginBtn" class="secondary-btn w-full">
-            Sign in
-          </button>
-
-          <p id="authMessage" class="message"></p>
+  <!-- 1. AUTHENTICATION SCREEN -->
+  <section id="authScreen" class="screen">
+    <div class="auth-wrapper">
+      <div class="m3-card auth-card">
+        <div class="auth-badge" aria-hidden="true">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+            <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+            <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+            <path d="M14 17.5h7"></path>
+            <path d="M17.5 14v7"></path>
+          </svg>
         </div>
 
-        <p class="muted text-xs mt-7 text-center">
-          Your files are stored privately in your cloud account.
+        <div class="m3-eyebrow">Private Storage</div>
+        <h1 class="text-2xl font-bold tracking-tight mt-1.5">Calculator Vault</h1>
+        <p class="m3-muted text-sm mt-1.5 mb-6">Sign in or create an account to access your encrypted cloud space.</p>
+
+        <div class="space-y-3.5">
+          <div>
+            <label for="email" class="block text-xs font-medium m3-muted mb-1.5 ml-1">Email address</label>
+            <input
+              id="email"
+              class="field"
+              type="email"
+              placeholder="name@example.com"
+              autocomplete="email"
+            >
+          </div>
+
+          <div>
+            <label for="accountPassword" class="block text-xs font-medium m3-muted mb-1.5 ml-1">Password</label>
+            <input
+              id="accountPassword"
+              class="field"
+              type="password"
+              placeholder="Minimum 8 characters"
+              autocomplete="current-password"
+            >
+          </div>
+
+          <div class="pt-2 space-y-2.5">
+            <button id="loginBtn" type="button" class="primary-btn">
+              Sign in
+            </button>
+
+            <button id="signupBtn" type="button" class="secondary-btn w-full">
+              Create account
+            </button>
+          </div>
+
+          <p id="authMessage" class="message pt-1" role="status" aria-live="polite"></p>
+        </div>
+
+        <p class="m3-muted text-xs mt-5 text-center leading-relaxed">
+          Protected with Supabase Auth &amp; cloud PIN verification.
         </p>
       </div>
     </div>
   </section>
 
 
-  <!-- PIN SCREEN -->
-  <section id="pinScreen" class="screen pin-layout hidden">
-    <div class="app-shell pin-layout">
-      <div class="panel pin-card">
-        <div class="pin-lock">●</div>
+  <!-- 2. PIN SCREEN -->
+  <section id="pinScreen" class="screen hidden">
+    <div class="pin-wrapper">
+      <div class="pin-header">
+        <div class="pin-lock-badge" aria-hidden="true">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+        </div>
 
-        <div class="eyebrow">Vault security</div>
-        <h1 id="pinTitle" class="text-3xl font-bold mt-3">
+        <div class="m3-eyebrow">Vault Security</div>
+        <h1 id="pinTitle" class="text-2xl font-bold tracking-tight mt-1.5">
           Create your PIN
         </h1>
-
-        <p id="pinDescription" class="muted mt-3 mb-8">
+        <p id="pinDescription" class="m3-muted text-sm mt-1">
           Choose your private calculator PIN
         </p>
 
+        <div id="pinDots" class="pin-dots" aria-hidden="true">
+          <span class="pin-dot"></span>
+          <span class="pin-dot"></span>
+          <span class="pin-dot"></span>
+          <span class="pin-dot"></span>
+        </div>
+
         <input
           id="pinInput"
-          class="field pin-input mb-5"
+          class="field pin-input"
           type="password"
           inputmode="numeric"
           maxlength="8"
           placeholder="••••"
           autocomplete="off"
+          aria-label="Enter 4 to 8 digit PIN"
         >
 
-        <button id="pinContinue" class="primary-btn">
+        <p id="pinMessage" class="message mt-3 text-center" role="status" aria-live="polite"></p>
+      </div>
+
+      <div class="space-y-3">
+        <div id="pinKeypad" class="pin-keypad" aria-label="PIN keypad">
+          <button type="button" class="pin-key" data-pin-digit="1">1</button>
+          <button type="button" class="pin-key" data-pin-digit="2">2</button>
+          <button type="button" class="pin-key" data-pin-digit="3">3</button>
+          <button type="button" class="pin-key" data-pin-digit="4">4</button>
+          <button type="button" class="pin-key" data-pin-digit="5">5</button>
+          <button type="button" class="pin-key" data-pin-digit="6">6</button>
+          <button type="button" class="pin-key" data-pin-digit="7">7</button>
+          <button type="button" class="pin-key" data-pin-digit="8">8</button>
+          <button type="button" class="pin-key" data-pin-digit="9">9</button>
+          <button type="button" class="pin-key secondary-key" data-pin-action="clear">Clear</button>
+          <button type="button" class="pin-key" data-pin-digit="0">0</button>
+          <button type="button" class="pin-key secondary-key" data-pin-action="backspace" aria-label="Delete digit">⌫</button>
+        </div>
+
+        <button id="pinContinue" type="button" class="primary-btn">
           Continue
         </button>
 
-        <p id="pinMessage" class="message mt-4"></p>
-
-        <p class="muted text-xs mt-6">
-          Your PIN is securely verified through your account.
+        <p class="m3-muted text-xs text-center">
+          PIN is verified in the cloud and never stored on your device.
         </p>
       </div>
     </div>
   </section>
 
 
-  <!-- CALCULATOR SCREEN -->
+  <!-- 3. CALCULATOR SCREEN (NO SETTINGS ICON) -->
   <section id="calculatorScreen" class="screen hidden">
-    <div class="calculator-layout">
+    <div class="calc-wrapper">
 
-      <div class="calculator-top">
+      <div class="calc-topbar">
         <div>
-          <div class="eyebrow">Private mode</div>
-          <div class="text-xl font-bold mt-1">Calculator</div>
+          <div class="m3-eyebrow">Standard</div>
+          <div class="text-lg font-semibold tracking-tight">Calculator</div>
         </div>
-        <div class="muted text-sm">Standard</div>
+        <span class="calc-pill">MathJS</span>
       </div>
 
-      <div class="calculator-display">
+      <div class="calc-display-area">
         <div id="expression"></div>
         <div id="display">0</div>
       </div>
 
       <div class="keypad">
-        <button class="key utility" data-action="clear">AC</button>
-        <button class="key utility" data-value="(">(</button>
-        <button class="key utility" data-value=")">)</button>
-        <button class="key operator" data-action="delete">⌫</button>
+        <button type="button" class="key utility" data-action="clear">AC</button>
+        <button type="button" class="key utility" data-value="(">(</button>
+        <button type="button" class="key utility" data-value=")">)</button>
+        <button type="button" class="key operator" data-action="delete" aria-label="Backspace">⌫</button>
 
-        <button class="key" data-value="7">7</button>
-        <button class="key" data-value="8">8</button>
-        <button class="key" data-value="9">9</button>
-        <button class="key operator" data-value="/">÷</button>
+        <button type="button" class="key" data-value="7">7</button>
+        <button type="button" class="key" data-value="8">8</button>
+        <button type="button" class="key" data-value="9">9</button>
+        <button type="button" class="key operator" data-value="/">÷</button>
 
-        <button class="key" data-value="4">4</button>
-        <button class="key" data-value="5">5</button>
-        <button class="key" data-value="6">6</button>
-        <button class="key operator" data-value="*">×</button>
+        <button type="button" class="key" data-value="4">4</button>
+        <button type="button" class="key" data-value="5">5</button>
+        <button type="button" class="key" data-value="6">6</button>
+        <button type="button" class="key operator" data-value="*">×</button>
 
-        <button class="key" data-value="1">1</button>
-        <button class="key" data-value="2">2</button>
-        <button class="key" data-value="3">3</button>
-        <button class="key operator" data-value="-">−</button>
+        <button type="button" class="key" data-value="1">1</button>
+        <button type="button" class="key" data-value="2">2</button>
+        <button type="button" class="key" data-value="3">3</button>
+        <button type="button" class="key operator" data-value="-">−</button>
 
-        <button class="key utility" data-value="%">%</button>
-        <button class="key" data-value="0">0</button>
-        <button class="key" data-value=".">.</button>
-        <button class="key operator" data-value="+">+</button>
+        <button type="button" class="key utility" data-value="%">%</button>
+        <button type="button" class="key" data-value="0">0</button>
+        <button type="button" class="key" data-value=".">.</button>
+        <button type="button" class="key operator" data-value="+">+</button>
 
-        <button class="key equals col-span-4" data-action="equals"
-          style="grid-column: span 4; height: 62px;">
-          =
-        </button>
+        <button type="button" class="key equals" data-action="equals" aria-label="Equals">=</button>
       </div>
 
-      <p class="muted text-xs text-center mt-5">
-        Enter your private PIN and press = to unlock your vault.
-      </p>
     </div>
   </section>
 
 
-  <!-- VAULT SCREEN -->
+  <!-- 4. PRIVATE VAULT SCREEN -->
   <section id="vaultScreen" class="screen hidden">
-    <div class="vault-layout">
+    <div class="vault-wrapper">
 
-      <header class="vault-header">
-        <div class="vault-header-row">
+      <header class="vault-appbar">
+        <div class="vault-appbar-inner">
           <div class="flex items-center gap-3 min-w-0">
-            <button id="backBtn" class="secondary-btn"
-              style="min-width:48px;padding:0;">←</button>
+            <button id="backBtn" type="button" class="icon-btn" aria-label="Go back">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M19 12H5"></path>
+                <path d="M12 19l-7-7 7-7"></path>
+              </svg>
+            </button>
 
             <div class="min-w-0">
-              <h1 class="text-2xl font-bold">My Vault</h1>
-              <p id="folderPath" class="muted text-sm mt-1">My files</p>
+              <h1 class="text-xl font-bold tracking-tight truncate">My Vault</h1>
+              <p id="folderPath" class="m3-muted text-xs truncate mt-0.5">My files</p>
             </div>
           </div>
 
-          <button id="addFolderBtn" class="secondary-btn">
-            + Folder
+          <button id="addFolderBtn" type="button" class="secondary-btn" style="min-height:42px;padding:0 16px;font-size:13.5px;">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+              <line x1="12" y1="11" x2="12" y2="17"></line>
+              <line x1="9" y1="14" x2="15" y2="14"></line>
+            </svg>
+            Folder
           </button>
         </div>
       </header>
 
-      <main class="vault-main">
+      <main class="vault-body">
 
-        <button id="uploadBtn" class="upload-button">
-          <span class="text-2xl">＋</span>
-          Add files
+        <button id="uploadBtn" type="button" class="upload-fab-btn">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          Add Files
         </button>
 
         <input
@@ -738,31 +1089,55 @@
           hidden
         >
 
-        <div class="flex items-center justify-between mt-7">
-          <h2 class="font-bold text-lg">Your files</h2>
-          <span class="muted text-xs">Private storage</span>
+        <div id="uploadProgressWrap" class="upload-progress-card hidden">
+          <div class="flex items-center justify-between text-xs font-medium">
+            <span id="uploadProgressLabel" class="truncate">Uploading...</span>
+            <span id="uploadProgressPercent" class="m3-eyebrow ml-2">0%</span>
+          </div>
+          <div class="progress-track">
+            <div id="uploadProgressBar" class="progress-fill"></div>
+          </div>
         </div>
 
-        <p id="vaultMessage" class="message mt-3"></p>
+        <div class="flex items-center justify-between mt-6 mb-3 px-0.5">
+          <h2 class="text-sm font-bold uppercase tracking-wider m3-muted">Folders &amp; Media</h2>
+          <span class="text-xs m3-muted">Private</span>
+        </div>
 
-        <div id="fileList" class="mt-4">
+        <p id="vaultMessage" class="message mb-3" role="status" aria-live="polite"></p>
+
+        <div id="fileList">
           <div class="empty-state">
-            <div class="empty-icon">📁</div>
-            Your files and folders will appear here.
+            <div class="empty-icon-wrap" aria-hidden="true">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+              </svg>
+            </div>
+            <div class="font-semibold text-sm text-[var(--text)]">Nothing here yet</div>
+            <div class="text-xs mt-1">Create a folder or tap Add Files to upload photos and videos.</div>
           </div>
         </div>
 
       </main>
 
-      <!-- SETTINGS INSIDE VAULT -->
-      <nav class="vault-bottom">
+      <!-- SETTINGS & SESSION BAR INSIDE VAULT -->
+      <nav class="vault-bottom" aria-label="Vault controls">
         <div class="vault-bottom-inner">
-          <button id="settingsBtn">
-            ⚙ Settings
+          <button id="settingsBtn" type="button" class="vault-nav-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            Settings
           </button>
 
-          <button id="signOutBtn">
-            ↪ Sign out
+          <button id="signOutBtn" type="button" class="vault-nav-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+            Sign out
           </button>
         </div>
       </nav>
@@ -771,49 +1146,68 @@
   </section>
 
 
-  <!-- SETTINGS DIALOG -->
+  <!-- 5. SETTINGS DIALOG (INSIDE VAULT) -->
   <dialog id="settingsDialog">
     <div class="dialog-inner">
-      <div class="flex items-center justify-between mb-6">
+      <div class="flex items-center justify-between gap-3 mb-5">
         <div>
-          <div class="eyebrow">Account</div>
-          <h2 class="dialog-title mt-2">Settings</h2>
+          <div class="m3-eyebrow">Vault Preferences</div>
+          <h2 class="dialog-title mt-1">Settings</h2>
         </div>
 
-        <button id="closeSettingsBtn" class="secondary-btn"
-          style="min-width:44px;padding:0;">✕</button>
+        <button id="closeSettingsBtn" type="button" class="icon-btn" aria-label="Close settings">✕</button>
       </div>
 
-      <div class="panel mb-4" style="padding:17px;">
-        <div class="font-bold">Security</div>
-        <p class="muted text-sm mt-1">
-          Update your private calculator PIN.
-        </p>
-        <button id="changePinBtn" class="primary-btn mt-4">
-          Change PIN
+      <div class="space-y-3.5">
+        <div class="m3-tonal-box p-4">
+          <div class="text-xs font-bold uppercase tracking-wider m3-eyebrow">Account Information</div>
+          <div class="mt-2.5 space-y-1.5 text-sm">
+            <div class="flex items-center justify-between gap-2">
+              <span class="m3-muted">Email</span>
+              <span id="settingsAccountEmail" class="font-medium truncate">Signed in user</span>
+            </div>
+            <div class="flex items-center justify-between gap-2">
+              <span class="m3-muted">User ID</span>
+              <span id="settingsAccountId" class="font-mono text-xs m3-muted truncate">—</span>
+            </div>
+            <div class="flex items-center justify-between gap-2">
+              <span class="m3-muted">PIN Storage</span>
+              <span class="text-xs font-medium text-[var(--primary)]">Cloud-verified only</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="m3-tonal-box p-4">
+          <div class="font-semibold text-sm">Vault Security</div>
+          <p class="m3-muted text-xs mt-1 leading-relaxed">
+            Change the 4–8 digit PIN used on the calculator screen to unlock My Vault.
+          </p>
+          <button id="changePinBtn" type="button" class="primary-btn mt-3.5" style="min-height:48px;">
+            Change PIN
+          </button>
+        </div>
+
+        <button id="settingsSignOutBtn" type="button" class="danger-btn">
+          Sign out of account
         </button>
       </div>
-
-      <p class="muted text-xs">
-        Your PIN is verified securely through your Supabase account.
-      </p>
     </div>
   </dialog>
 
 
-  <!-- PREVIEW DIALOG -->
+  <!-- FULL-SCREEN FILE PREVIEW DIALOG -->
   <dialog id="previewDialog">
     <div class="dialog-inner">
       <div class="flex items-center justify-between gap-3">
         <div class="min-w-0">
-          <div class="eyebrow">File preview</div>
-          <h2 id="previewName" class="font-bold text-lg mt-2 break-words">
+          <div class="m3-eyebrow">Media Viewer</div>
+          <h2 id="previewName" class="font-bold text-base mt-1 truncate">
             Preview
           </h2>
+          <p id="previewMeta" class="m3-muted text-xs mt-0.5 truncate"></p>
         </div>
 
-        <button id="closePreviewBtn" class="secondary-btn"
-          style="min-width:44px;padding:0;">✕</button>
+        <button id="closePreviewBtn" type="button" class="icon-btn" aria-label="Close preview">✕</button>
       </div>
 
       <div id="previewContent"></div>
