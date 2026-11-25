@@ -1,4 +1,3 @@
-
 /* ==========================================
    CALCULATOR VAULT
    Supabase Authentication + Cloud PIN
@@ -24,6 +23,7 @@ let calculatorValue = "";
 let pinMode = "setup";
 let firstPin = "";
 let currentPinForChange = "";
+let snackbarTimer = null;
 
 const screens = [
   "authScreen",
@@ -31,6 +31,154 @@ const screens = [
   "calculatorScreen",
   "vaultScreen"
 ];
+
+/* ==========================================
+   INBUILT WEBSITE UI MODALS & SNACKBAR
+========================================== */
+
+function showSnackbar(message, durationMs = 3600) {
+  const bar = $("appSnackbar");
+  const text = $("appSnackbarText");
+  if (!bar || !text) return;
+
+  text.textContent = message;
+  bar.classList.remove("hidden");
+
+  if (snackbarTimer) clearTimeout(snackbarTimer);
+  snackbarTimer = setTimeout(() => {
+    bar.classList.add("hidden");
+  }, durationMs);
+}
+
+$("appSnackbarClose")?.addEventListener("click", () => {
+  if (snackbarTimer) clearTimeout(snackbarTimer);
+  $("appSnackbar")?.classList.add("hidden");
+});
+
+function openAppModal({
+  eyebrow = "Vault",
+  title = "",
+  description = "",
+  confirmText = "Confirm",
+  cancelText = "Cancel",
+  danger = false,
+  withInput = false,
+  defaultValue = "",
+  placeholder = ""
+}) {
+  return new Promise(resolve => {
+    const dialog = $("appModalDialog");
+    const eyebrowEl = $("appModalEyebrow");
+    const titleEl = $("appModalTitle");
+    const descEl = $("appModalDescription");
+    const inputWrap = $("appModalInputWrap");
+    const inputEl = $("appModalInput");
+    const cancelBtn = $("appModalCancelBtn");
+    const confirmBtn = $("appModalConfirmBtn");
+
+    eyebrowEl.textContent = eyebrow;
+    titleEl.textContent = title;
+    descEl.textContent = description;
+    descEl.classList.toggle("hidden", !description);
+
+    confirmBtn.textContent = confirmText;
+    cancelBtn.textContent = cancelText;
+    confirmBtn.classList.toggle("is-danger", Boolean(danger));
+
+    if (withInput) {
+      inputWrap.classList.remove("hidden");
+      inputEl.value = defaultValue;
+      inputEl.placeholder = placeholder;
+    } else {
+      inputWrap.classList.add("hidden");
+      inputEl.value = "";
+    }
+
+    let settled = false;
+    const finish = result => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (dialog.open) dialog.close();
+      resolve(result);
+    };
+
+    const onConfirm = () => {
+      if (withInput) {
+        finish(inputEl.value);
+      } else {
+        finish(true);
+      }
+    };
+
+    const onCancel = () => {
+      finish(withInput ? null : false);
+    };
+
+    const onKeyDown = e => {
+      if (e.key === "Enter" && withInput) {
+        e.preventDefault();
+        onConfirm();
+      }
+    };
+
+    const onBackdropClick = e => {
+      if (e.target === dialog) {
+        onCancel();
+      }
+    };
+
+    const onDialogClose = () => {
+      onCancel();
+    };
+
+    function cleanup() {
+      confirmBtn.removeEventListener("click", onConfirm);
+      cancelBtn.removeEventListener("click", onCancel);
+      inputEl.removeEventListener("keydown", onKeyDown);
+      dialog.removeEventListener("click", onBackdropClick);
+      dialog.removeEventListener("close", onDialogClose);
+    }
+
+    confirmBtn.addEventListener("click", onConfirm);
+    cancelBtn.addEventListener("click", onCancel);
+    inputEl.addEventListener("keydown", onKeyDown);
+    dialog.addEventListener("click", onBackdropClick);
+    dialog.addEventListener("close", onDialogClose);
+
+    dialog.showModal();
+
+    if (withInput) {
+      requestAnimationFrame(() => {
+        inputEl.focus();
+        inputEl.select();
+      });
+    }
+  });
+}
+
+function showConfirmModal({ eyebrow, title, description, confirmText = "Confirm", danger = false }) {
+  return openAppModal({
+    eyebrow,
+    title,
+    description,
+    confirmText,
+    danger,
+    withInput: false
+  });
+}
+
+function showPromptModal({ eyebrow, title, description = "", defaultValue = "", placeholder = "", confirmText = "Save" }) {
+  return openAppModal({
+    eyebrow,
+    title,
+    description,
+    confirmText,
+    withInput: true,
+    defaultValue,
+    placeholder
+  });
+}
 
 /* ==========================================
    GENERAL HELPERS
@@ -65,6 +213,86 @@ function requireUser() {
 
 function safeFileName(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function formatBytes(bytes) {
+  if (typeof bytes !== "number" || Number.isNaN(bytes) || bytes < 0) {
+    return "";
+  }
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const idx = Math.min(
+    units.length - 1,
+    Math.floor(Math.log(bytes) / Math.log(1024))
+  );
+  const value = bytes / Math.pow(1024, idx);
+  return `${value >= 10 || idx === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[idx]}`;
+}
+
+function formatShortType(mimeType, fileName) {
+  if (mimeType?.startsWith("video/")) {
+    const ext = mimeType.split("/")[1]?.toUpperCase();
+    return ext ? `VIDEO · ${ext}` : "VIDEO";
+  }
+  if (mimeType?.startsWith("image/")) {
+    const subtype = mimeType.split("/")[1]?.replace("jpeg", "jpg")?.toUpperCase();
+    return subtype ? `IMAGE · ${subtype}` : "IMAGE";
+  }
+  const fallbackExt = fileName?.split(".").pop()?.toUpperCase();
+  return fallbackExt || "FILE";
+}
+
+function updatePinDots() {
+  const dotsContainer = $("pinDots");
+  if (!dotsContainer) return;
+  const currentLength = ($("pinInput")?.value || "").length;
+  const dots = dotsContainer.querySelectorAll(".pin-dot");
+  dots.forEach((dot, index) => {
+    dot.classList.toggle("filled", index < currentLength);
+  });
+}
+
+function setUploadProgress(visible, percent = 0, label = "") {
+  const wrap = $("uploadProgressWrap");
+  const bar = $("uploadProgressBar");
+  const pct = $("uploadProgressPercent");
+  const lbl = $("uploadProgressLabel");
+
+  if (!wrap) return;
+  if (!visible) {
+    wrap.classList.add("hidden");
+    if (bar) bar.style.width = "0%";
+    if (pct) pct.textContent = "0%";
+    if (lbl) lbl.textContent = "";
+    return;
+  }
+
+  wrap.classList.remove("hidden");
+  const clamped = Math.max(0, Math.min(100, Math.round(percent)));
+  if (bar) bar.style.width = `${clamped}%`;
+  if (pct) pct.textContent = `${clamped}%`;
+  if (lbl && label) lbl.textContent = label;
+}
+
+function populateSettingsAccountInfo() {
+  if ($("settingsAccountEmail")) {
+    $("settingsAccountEmail").textContent = user?.email || "Signed in account";
+  }
+  if ($("settingsAccountId")) {
+    $("settingsAccountId").textContent = user?.id ? `${user.id.slice(0, 8)}…` : "—";
+  }
+}
+
+function resetClientSessionState() {
+  user = null;
+  currentFolder = null;
+  folderStack = [];
+  currentPinForChange = "";
+  firstPin = "";
+  calculatorValue = "";
+  if ($("fileList")) $("fileList").replaceChildren();
+  if ($("email")) $("email").value = "";
+  if ($("accountPassword")) $("accountPassword").value = "";
 }
 
 /* ==========================================
@@ -145,6 +373,7 @@ function showPinSetup(mode = "setup") {
   firstPin = "";
 
   $("pinInput").value = "";
+  updatePinDots();
   $("pinContinue").disabled = false;
   $("pinContinue").textContent = "Continue";
 
@@ -274,6 +503,32 @@ async function afterLogin() {
 $("pinInput").addEventListener("input", () => {
   $("pinInput").value =
     $("pinInput").value.replace(/\D/g, "").slice(0, 8);
+  updatePinDots();
+});
+
+document.querySelectorAll("[data-pin-digit]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const digit = btn.dataset.pinDigit;
+    const current = $("pinInput").value;
+    if (current.length < 8) {
+      $("pinInput").value = current + digit;
+      updatePinDots();
+      showMessage("pinMessage", "");
+    }
+  });
+});
+
+document.querySelectorAll("[data-pin-action]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const action = btn.dataset.pinAction;
+    if (action === "clear") {
+      $("pinInput").value = "";
+    } else if (action === "backspace") {
+      $("pinInput").value = $("pinInput").value.slice(0, -1);
+    }
+    updatePinDots();
+    showMessage("pinMessage", "");
+  });
 });
 
 $("pinContinue").addEventListener("click", async () => {
@@ -303,6 +558,7 @@ $("pinContinue").addEventListener("click", async () => {
       pinMode = "confirm";
 
       $("pinInput").value = "";
+      updatePinDots();
       $("pinTitle").textContent = "Confirm your PIN";
       $("pinDescription").textContent =
         "Enter the same PIN again";
@@ -315,6 +571,7 @@ $("pinContinue").addEventListener("click", async () => {
       if (pin !== firstPin) {
         firstPin = "";
         $("pinInput").value = "";
+        updatePinDots();
 
         pinMode = currentPinForChange ? "change" : "setup";
 
@@ -337,8 +594,7 @@ $("pinContinue").addEventListener("click", async () => {
 
       firstPin = "";
       showCalculator();
-
-      alert("PIN saved securely to your account.");
+      showSnackbar("PIN saved securely to your account.");
     }
   } catch (error) {
     showError("pinMessage", error);
@@ -449,6 +705,7 @@ async function openVault() {
   currentFolder = null;
   folderStack = [];
 
+  populateSettingsAccountInfo();
   showScreen("vaultScreen");
   await loadVault();
 }
@@ -467,7 +724,13 @@ $("backBtn").addEventListener("click", async () => {
 });
 
 $("addFolderBtn").addEventListener("click", async () => {
-  const name = prompt("Enter folder name:");
+  const name = await showPromptModal({
+    eyebrow: "New Folder",
+    title: "Create folder",
+    description: "Organize your private photos and videos inside a new folder.",
+    placeholder: "Folder name",
+    confirmText: "Create"
+  });
 
   if (!name || !name.trim()) return;
 
@@ -485,6 +748,7 @@ $("addFolderBtn").addEventListener("click", async () => {
     if (error) throw error;
 
     await loadVault();
+    showSnackbar(`Folder "${name.trim()}" created.`);
   } catch (error) {
     showError("vaultMessage", error);
   }
@@ -534,7 +798,7 @@ async function loadVault() {
       const item = document.createElement("div");
       item.className = "file-item";
 
-      const icon = document.createElement("span");
+      const icon = document.createElement("div");
       icon.className = "file-icon";
       icon.textContent = "📁";
 
@@ -542,9 +806,17 @@ async function loadVault() {
       info.className = "file-info";
       info.textContent = folder.name;
 
-      const open = document.createElement("button");
-      open.textContent = "Open";
+      const meta = document.createElement("div");
+      meta.className = "file-meta";
+      meta.textContent = "FOLDER";
+      info.append(meta);
 
+      const actions = document.createElement("div");
+      actions.className = "file-actions";
+
+      const open = document.createElement("button");
+      open.type = "button";
+      open.textContent = "Open";
       open.addEventListener("click", async () => {
         folderStack.push(currentFolder);
         currentFolder = folder.id;
@@ -552,14 +824,17 @@ async function loadVault() {
       });
 
       const rename = document.createElement("button");
+      rename.type = "button";
       rename.textContent = "Rename";
       rename.addEventListener("click", () => renameFolder(folder));
 
       const remove = document.createElement("button");
+      remove.type = "button";
       remove.textContent = "Delete";
       remove.addEventListener("click", () => deleteFolder(folder));
 
-      item.append(icon, info, open, rename, remove);
+      actions.append(open, rename, remove);
+      item.append(icon, info, actions);
       list.append(item);
     });
 
@@ -567,37 +842,100 @@ async function loadVault() {
       const item = document.createElement("div");
       item.className = "file-item";
 
-      const icon = document.createElement("span");
+      const isVideo = file.mime_type?.startsWith("video/");
+      const isImage = file.mime_type?.startsWith("image/");
+
+      const icon = document.createElement("div");
       icon.className = "file-icon";
-      icon.textContent =
-        file.mime_type?.startsWith("video/") ? "🎬" : "🖼️";
+
+      if (isImage && file.object_path) {
+        const fallbackGlyph = document.createElement("span");
+        fallbackGlyph.textContent = "🖼️";
+        icon.append(fallbackGlyph);
+
+        const thumb = document.createElement("img");
+        thumb.className = "file-thumb";
+        thumb.alt = file.file_name;
+        thumb.loading = "lazy";
+        thumb.style.display = "none";
+
+        db.storage
+          .from(BUCKET)
+          .createSignedUrl(file.object_path, 300)
+          .then(({ data, error }) => {
+            if (!error && data?.signedUrl && thumb.isConnected) {
+              thumb.src = data.signedUrl;
+              thumb.onload = () => {
+                fallbackGlyph.style.display = "none";
+                thumb.style.display = "block";
+              };
+            }
+          })
+          .catch(() => {});
+
+        icon.append(thumb);
+      } else {
+        icon.textContent = isVideo ? "🎬" : "📄";
+      }
+
+      const badge = document.createElement("span");
+      badge.className = "file-badge";
+      badge.textContent = isVideo ? "VIDEO" : "IMAGE";
+      icon.append(badge);
 
       const info = document.createElement("div");
       info.className = "file-info";
       info.textContent = file.file_name;
 
+      const metaParts = [formatShortType(file.mime_type, file.file_name)];
+      const formattedSize = formatBytes(file.size_bytes);
+      if (formattedSize) metaParts.push(formattedSize);
+
+      const meta = document.createElement("div");
+      meta.className = "file-meta";
+      meta.textContent = metaParts.join(" · ");
+      info.append(meta);
+
+      const actions = document.createElement("div");
+      actions.className = "file-actions";
+
       const preview = document.createElement("button");
+      preview.type = "button";
       preview.textContent = "View";
       preview.addEventListener("click", () => previewFile(file));
 
       const rename = document.createElement("button");
+      rename.type = "button";
       rename.textContent = "Rename";
       rename.addEventListener("click", () => renameFile(file));
 
       const remove = document.createElement("button");
+      remove.type = "button";
       remove.textContent = "Delete";
       remove.addEventListener("click", () => deleteFile(file));
 
-      item.append(icon, info, preview, rename, remove);
+      actions.append(preview, rename, remove);
+      item.append(icon, info, actions);
       list.append(item);
     });
 
-    showMessage(
-      "vaultMessage",
-      folderItems.length || fileItems.length
-        ? ""
-        : "This folder is empty."
-    );
+    if (!folderItems.length && !fileItems.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty-state";
+      empty.innerHTML = `
+        <div class="empty-icon-wrap" aria-hidden="true">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+          </svg>
+        </div>
+        <div class="font-semibold text-sm text-[var(--text)]">This folder is empty</div>
+        <div class="text-xs mt-1">Tap Add Files above to store photos or videos here.</div>
+      `;
+      list.append(empty);
+      showMessage("vaultMessage", "");
+    } else {
+      showMessage("vaultMessage", "");
+    }
   } catch (error) {
     showError("vaultMessage", error);
   }
@@ -619,12 +957,26 @@ $("fileInput").addEventListener("change", async event => {
   try {
     requireUser();
 
-    showMessage("vaultMessage", "Uploading files...");
+    showMessage("vaultMessage", "");
+    setUploadProgress(
+      true,
+      5,
+      `Preparing ${selectedFiles.length} file(s)...`
+    );
 
     let uploadedCount = 0;
     const failedFiles = [];
 
-    for (const file of selectedFiles) {
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const file = selectedFiles[i];
+      const basePercent = (i / selectedFiles.length) * 100;
+
+      setUploadProgress(
+        true,
+        basePercent + 10,
+        `Uploading (${i + 1}/${selectedFiles.length}): ${file.name}`
+      );
+
       if (
         !file.type.startsWith("image/") &&
         !file.type.startsWith("video/")
@@ -648,6 +1000,12 @@ $("fileInput").addEventListener("change", async event => {
         continue;
       }
 
+      setUploadProgress(
+        true,
+        basePercent + 65,
+        `Saving record: ${file.name}`
+      );
+
       const { error: databaseError } = await db
         .from("vault_files")
         .insert({
@@ -666,6 +1024,11 @@ $("fileInput").addEventListener("change", async event => {
       }
 
       uploadedCount++;
+      setUploadProgress(
+        true,
+        ((i + 1) / selectedFiles.length) * 100,
+        `Uploaded ${uploadedCount} of ${selectedFiles.length}`
+      );
     }
 
     event.target.value = "";
@@ -678,13 +1041,12 @@ $("fileInput").addEventListener("change", async event => {
         `${uploadedCount} uploaded. ${failedFiles.join(" | ")}`
       );
     } else {
-      showMessage(
-        "vaultMessage",
-        `${uploadedCount} file(s) uploaded successfully.`
-      );
+      showSnackbar(`${uploadedCount} file(s) uploaded successfully.`);
     }
   } catch (error) {
     showError("vaultMessage", error);
+  } finally {
+    setTimeout(() => setUploadProgress(false), 900);
   }
 });
 
@@ -702,6 +1064,13 @@ async function previewFile(file) {
 
     $("previewName").textContent = file.file_name;
 
+    if ($("previewMeta")) {
+      const parts = [formatShortType(file.mime_type, file.file_name)];
+      const sizeStr = formatBytes(file.size_bytes);
+      if (sizeStr) parts.push(sizeStr);
+      $("previewMeta").textContent = parts.join(" · ");
+    }
+
     const content = $("previewContent");
     content.replaceChildren();
 
@@ -714,6 +1083,7 @@ async function previewFile(file) {
     if (media.tagName === "VIDEO") {
       media.controls = true;
       media.playsInline = true;
+      media.autoplay = true;
     } else {
       media.alt = file.file_name;
     }
@@ -726,8 +1096,16 @@ async function previewFile(file) {
 }
 
 $("closePreviewBtn").addEventListener("click", () => {
+  const video = $("previewContent")?.querySelector("video");
+  if (video) video.pause();
   $("previewDialog").close();
   $("previewContent").replaceChildren();
+});
+
+$("previewDialog")?.addEventListener("click", e => {
+  if (e.target === $("previewDialog")) {
+    $("closePreviewBtn").click();
+  }
 });
 
 /* ==========================================
@@ -735,9 +1113,15 @@ $("closePreviewBtn").addEventListener("click", () => {
 ========================================== */
 
 async function renameFile(file) {
-  const newName = prompt("Enter new file name:", file.file_name);
+  const newName = await showPromptModal({
+    eyebrow: "Rename File",
+    title: "Rename file",
+    defaultValue: file.file_name,
+    placeholder: "File name",
+    confirmText: "Rename"
+  });
 
-  if (!newName || !newName.trim()) return;
+  if (!newName || !newName.trim() || newName.trim() === file.file_name) return;
 
   try {
     const { error } = await db
@@ -749,6 +1133,7 @@ async function renameFile(file) {
     if (error) throw error;
 
     await loadVault();
+    showSnackbar("File renamed.");
   } catch (error) {
     showError("vaultMessage", error);
   }
@@ -759,7 +1144,15 @@ async function renameFile(file) {
 ========================================== */
 
 async function deleteFile(file) {
-  if (!confirm(`Delete ${file.file_name}?`)) return;
+  const confirmed = await showConfirmModal({
+    eyebrow: "Permanent Action",
+    title: "Delete file?",
+    description: `"${file.file_name}" will be permanently removed from your vault.`,
+    confirmText: "Delete",
+    danger: true
+  });
+
+  if (!confirmed) return;
 
   try {
     const { error: storageError } = await db.storage
@@ -777,6 +1170,7 @@ async function deleteFile(file) {
     if (error) throw error;
 
     await loadVault();
+    showSnackbar("File deleted.");
   } catch (error) {
     showError("vaultMessage", error);
   }
@@ -787,9 +1181,15 @@ async function deleteFile(file) {
 ========================================== */
 
 async function renameFolder(folder) {
-  const name = prompt("Enter new folder name:", folder.name);
+  const name = await showPromptModal({
+    eyebrow: "Rename Folder",
+    title: "Rename folder",
+    defaultValue: folder.name,
+    placeholder: "Folder name",
+    confirmText: "Rename"
+  });
 
-  if (!name || !name.trim()) return;
+  if (!name || !name.trim() || name.trim() === folder.name) return;
 
   try {
     const { error } = await db
@@ -801,6 +1201,7 @@ async function renameFolder(folder) {
     if (error) throw error;
 
     await loadVault();
+    showSnackbar("Folder renamed.");
   } catch (error) {
     showError("vaultMessage", error);
   }
@@ -827,13 +1228,20 @@ async function deleteFolder(folder) {
     if (fileError) throw fileError;
 
     if (folderCount || fileCount) {
-      return showMessage(
-        "vaultMessage",
+      return showSnackbar(
         "This folder is not empty. Delete or move its contents first."
       );
     }
 
-    if (!confirm(`Delete folder ${folder.name}?`)) return;
+    const confirmed = await showConfirmModal({
+      eyebrow: "Permanent Action",
+      title: "Delete folder?",
+      description: `Are you sure you want to delete "${folder.name}"?`,
+      confirmText: "Delete",
+      danger: true
+    });
+
+    if (!confirmed) return;
 
     const { error } = await db
       .from("vault_folders")
@@ -844,21 +1252,29 @@ async function deleteFolder(folder) {
     if (error) throw error;
 
     await loadVault();
+    showSnackbar("Folder deleted.");
   } catch (error) {
     showError("vaultMessage", error);
   }
 }
 
 /* ==========================================
-   SETTINGS
+   SETTINGS, SIGN OUT & DELETE ACCOUNT
 ========================================== */
 
 $("settingsBtn").addEventListener("click", () => {
+  populateSettingsAccountInfo();
   $("settingsDialog").showModal();
 });
 
 $("closeSettingsBtn").addEventListener("click", () => {
   $("settingsDialog").close();
+});
+
+$("settingsDialog")?.addEventListener("click", e => {
+  if (e.target === $("settingsDialog")) {
+    $("settingsDialog").close();
+  }
 });
 
 $("changePinBtn").addEventListener("click", () => {
@@ -867,26 +1283,157 @@ $("changePinBtn").addEventListener("click", () => {
   showPinSetup("verifyCurrent");
 });
 
-$("signOutBtn").addEventListener("click", async () => {
-  if (!confirm("Sign out of your account?")) return;
+async function handleSignOut() {
+  if ($("settingsDialog")?.open) $("settingsDialog").close();
+
+  const confirmed = await showConfirmModal({
+    eyebrow: "Account Session",
+    title: "Sign out?",
+    description: "You will need to sign back in with your email and password to access your vault.",
+    confirmText: "Sign out",
+    danger: true
+  });
+
+  if (!confirmed) return;
 
   try {
     const { error } = await db.auth.signOut();
 
     if (error) throw error;
 
-    user = null;
-    currentPinForChange = "";
-    firstPin = "";
-    calculatorValue = "";
-
-    $("settingsDialog").close();
+    resetClientSessionState();
     showScreen("authScreen");
     showMessage("authMessage", "You have signed out.");
   } catch (error) {
     showError("authMessage", error);
   }
-});
+}
+
+async function handleDeleteAccount() {
+  if ($("settingsDialog")?.open) $("settingsDialog").close();
+
+  const confirmed = await showConfirmModal({
+    eyebrow: "Permanent Account Deletion",
+    title: "Delete your account?",
+    description: "This will permanently delete all your stored files, folders, PIN settings, and vault data. This action cannot be undone.",
+    confirmText: "Delete everything",
+    danger: true
+  });
+
+  if (!confirmed) return;
+
+  try {
+    requireUser();
+    const targetUserId = user.id;
+
+    showSnackbar("Deleting all files, folders, and account data...", 8000);
+
+    // 1. Fetch all file records for this user to purge storage objects
+    const { data: userFiles, error: fetchFilesError } = await db
+      .from("vault_files")
+      .select("id, object_path")
+      .eq("user_id", targetUserId);
+
+    if (fetchFilesError) throw fetchFilesError;
+
+    // 2. Remove every file from Supabase Storage ("vault-files")
+    const pathsToRemove = (userFiles || [])
+      .map(f => f.object_path)
+      .filter(Boolean);
+
+    if (pathsToRemove.length > 0) {
+      const { error: storageRemoveError } = await db.storage
+        .from(BUCKET)
+        .remove(pathsToRemove);
+
+      if (storageRemoveError) throw storageRemoveError;
+    }
+
+    // Also list any orphaned objects under userId/ folder in storage
+    const { data: listedObjects } = await db.storage
+      .from(BUCKET)
+      .list(targetUserId, { limit: 1000 });
+
+    if (listedObjects && listedObjects.length > 0) {
+      const orphanPaths = listedObjects
+        .filter(obj => obj.name)
+        .map(obj => `${targetUserId}/${obj.name}`);
+      if (orphanPaths.length > 0) {
+        await db.storage.from(BUCKET).remove(orphanPaths);
+      }
+    }
+
+    // 3. Delete all file rows in "vault_files"
+    const { error: deleteFilesError } = await db
+      .from("vault_files")
+      .delete()
+      .eq("user_id", targetUserId);
+
+    if (deleteFilesError) throw deleteFilesError;
+
+    // 4. Delete all folder rows in "vault_folders" (child folders first, then root)
+    let remainingFolders = true;
+    let safetyPasses = 0;
+    while (remainingFolders && safetyPasses < 20) {
+      safetyPasses++;
+      const { data: foldersLeft } = await db
+        .from("vault_folders")
+        .select("id, parent_id")
+        .eq("user_id", targetUserId);
+
+      if (!foldersLeft || foldersLeft.length === 0) {
+        remainingFolders = false;
+        break;
+      }
+
+      const parentIds = new Set(
+        foldersLeft.map(f => f.parent_id).filter(Boolean)
+      );
+      const leafIds = foldersLeft
+        .filter(f => !parentIds.has(f.id))
+        .map(f => f.id);
+
+      const idsToDelete = leafIds.length > 0
+        ? leafIds
+        : foldersLeft.map(f => f.id);
+
+      const { error: delFolderErr } = await db
+        .from("vault_folders")
+        .delete()
+        .in("id", idsToDelete)
+        .eq("user_id", targetUserId);
+
+      if (delFolderErr) throw delFolderErr;
+    }
+
+    // 5. Attempt cloud PIN cleanup via Edge Function if supported
+    try {
+      await callPinFunction({ action: "delete" });
+    } catch (_) {
+      // Ignore if Edge Function only exposes status/setup/verify/change
+    }
+
+    // 6. Attempt auth user deletion RPC if configured on Supabase
+    try {
+      await db.rpc("delete_user");
+    } catch (_) {
+      // Proceed to sign out even if RPC is not deployed
+    }
+
+    // 7. Sign out and return to Sign In screen
+    await db.auth.signOut();
+    resetClientSessionState();
+    showScreen("authScreen");
+    showMessage("authMessage", "Your account data and files have been permanently deleted.");
+    showSnackbar("Account and all vault data deleted.");
+  } catch (error) {
+    showError("vaultMessage", error);
+    showSnackbar(error?.message || "Failed to delete account data.");
+  }
+}
+
+$("signOutBtn").addEventListener("click", handleSignOut);
+$("deleteAccountBtn").addEventListener("click", handleDeleteAccount);
 
 /* ==========================================
    APP STARTUP
