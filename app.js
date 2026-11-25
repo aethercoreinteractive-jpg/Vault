@@ -22,18 +22,21 @@ let currentFolderObj = null;
 let folderStack = [];
 let allFoldersCache = [];
 let allFilesCache = [];
+let currentVisibleFolders = [];
 let currentFolderMedia = [];
 let activeViewerIndex = -1;
 
 // Target folder for "+" card inside a folder
 let uploadTargetFolderId = null;
 
-// Multi-select state (long-press triggered)
+// Multi-select state (long-press triggered on media or albums)
 let selectionMode = false;
 let selectedFileIds = new Set();
+let selectedFolderIds = new Set();
 
 // Interactive album move mode state ("Move here" / "Discard")
 let pendingMoveFileIds = null;
+let pendingMoveFolderIds = null;
 let pendingMoveReturnFolder = null;
 let pendingMoveReturnStack = null;
 let pendingMoveReturnTab = "albums";
@@ -51,6 +54,13 @@ const screens = [
   "calculatorScreen",
   "vaultScreen"
 ];
+
+function hasPendingMove() {
+  return Boolean(
+    (pendingMoveFileIds && pendingMoveFileIds.length > 0) ||
+    (pendingMoveFolderIds && pendingMoveFolderIds.length > 0)
+  );
+}
 
 /* ==========================================
    FLOATING TABS (ALL MEDIA / ALBUMS)
@@ -72,7 +82,7 @@ function syncTabButtonsUI() {
 }
 
 $("tabAllMediaBtn")?.addEventListener("click", async () => {
-  if (pendingMoveFileIds) return;
+  if (hasPendingMove()) return;
   closeFolderMoreMenu();
   exitSelectionMode();
   activeVaultTab = "all_media";
@@ -334,7 +344,7 @@ function showPromptModal({ eyebrow, title, description = "", defaultValue = "", 
 async function stepBackVault() {
   closeFolderMoreMenu();
 
-  if (pendingMoveFileIds) {
+  if (hasPendingMove()) {
     if (folderStack.length > 0) {
       currentFolder = folderStack.pop();
       await loadVault();
@@ -496,12 +506,15 @@ function resetClientSessionState() {
   folderStack = [];
   allFoldersCache = [];
   allFilesCache = [];
+  currentVisibleFolders = [];
   currentFolderMedia = [];
   activeViewerIndex = -1;
   uploadTargetFolderId = null;
   selectionMode = false;
   selectedFileIds.clear();
+  selectedFolderIds.clear();
   pendingMoveFileIds = null;
+  pendingMoveFolderIds = null;
   pendingMoveReturnFolder = null;
   pendingMoveReturnStack = null;
   pendingMoveReturnTab = "albums";
@@ -515,27 +528,41 @@ function resetClientSessionState() {
 }
 
 /* ==========================================
-   LONG-PRESS MULTI-SELECT & BATCH ACTIONS
+   LONG-PRESS MULTI-SELECT & ICON ACTIONS
 ========================================== */
+
+function getTotalSelectedCount() {
+  return selectedFileIds.size + selectedFolderIds.size;
+}
 
 function refreshSelectionUI() {
   const topBar = $("selectionTopBar");
   const bottomBar = $("selectionBottomBar");
   const countEl = $("selectionCountLabel");
   const selectAllBtn = $("selectAllBtn");
+  const renameBtn = $("batchRenameBtn");
 
-  const active = selectionMode && !pendingMoveFileIds;
+  const totalSel = getTotalSelectedCount();
+  const active = selectionMode && !hasPendingMove() && totalSel > 0;
+
   if (topBar) topBar.classList.toggle("hidden", !active);
-  if (bottomBar) bottomBar.classList.toggle("hidden", !active || selectedFileIds.size === 0);
+  if (bottomBar) bottomBar.classList.toggle("hidden", !active);
 
   if (countEl) {
-    countEl.textContent = `${selectedFileIds.size} selected`;
+    countEl.textContent = `${totalSel} selected`;
   }
 
+  // Pencil (Rename) enabled only when exactly 1 item (media or album) is selected
+  if (renameBtn) {
+    renameBtn.disabled = totalSel !== 1;
+  }
+
+  const totalItems = currentVisibleFolders.length + currentFolderMedia.length;
   if (selectAllBtn) {
     const allSelected =
-      currentFolderMedia.length > 0 &&
-      currentFolderMedia.every(f => selectedFileIds.has(f.id));
+      totalItems > 0 &&
+      currentVisibleFolders.every(f => selectedFolderIds.has(f.id)) &&
+      currentFolderMedia.every(m => selectedFileIds.has(m.id));
     selectAllBtn.textContent = allSelected ? "Deselect all" : "Select all";
   }
 
@@ -549,42 +576,75 @@ function refreshSelectionUI() {
       badge.textContent = isSel ? "✓" : "";
     }
   });
+
+  document.querySelectorAll(".folder-card[data-folder-id]").forEach(card => {
+    const id = card.dataset.folderId;
+    const isSel = active && selectedFolderIds.has(id);
+    card.classList.toggle("is-selected", isSel);
+  });
 }
 
 function enterSelectionModeWithFile(fileId) {
-  if (pendingMoveFileIds) return;
+  if (hasPendingMove()) return;
   selectionMode = true;
   selectedFileIds.add(fileId);
+  refreshSelectionUI();
+}
+
+function enterSelectionModeWithFolder(folderId) {
+  if (hasPendingMove()) return;
+  selectionMode = true;
+  selectedFolderIds.add(folderId);
   refreshSelectionUI();
 }
 
 function exitSelectionMode() {
   selectionMode = false;
   selectedFileIds.clear();
+  selectedFolderIds.clear();
   refreshSelectionUI();
 }
 
 function toggleFileSelection(fileId) {
   if (selectedFileIds.has(fileId)) {
     selectedFileIds.delete(fileId);
-    if (selectedFileIds.size === 0) {
-      selectionMode = false;
-    }
   } else {
     selectedFileIds.add(fileId);
+  }
+  if (getTotalSelectedCount() === 0) {
+    selectionMode = false;
+  }
+  refreshSelectionUI();
+}
+
+function toggleFolderSelection(folderId) {
+  if (selectedFolderIds.has(folderId)) {
+    selectedFolderIds.delete(folderId);
+  } else {
+    selectedFolderIds.add(folderId);
+  }
+  if (getTotalSelectedCount() === 0) {
+    selectionMode = false;
   }
   refreshSelectionUI();
 }
 
 $("selectAllBtn")?.addEventListener("click", () => {
-  if (!currentFolderMedia.length) return;
-  const allSelected = currentFolderMedia.every(f => selectedFileIds.has(f.id));
+  const totalItems = currentVisibleFolders.length + currentFolderMedia.length;
+  if (!totalItems) return;
+
+  const allSelected =
+    currentVisibleFolders.every(f => selectedFolderIds.has(f.id)) &&
+    currentFolderMedia.every(m => selectedFileIds.has(m.id));
+
   if (allSelected) {
     selectedFileIds.clear();
+    selectedFolderIds.clear();
     selectionMode = false;
   } else {
     selectionMode = true;
-    currentFolderMedia.forEach(f => selectedFileIds.add(f.id));
+    currentVisibleFolders.forEach(f => selectedFolderIds.add(f.id));
+    currentFolderMedia.forEach(m => selectedFileIds.add(m.id));
   }
   refreshSelectionUI();
 });
@@ -593,21 +653,49 @@ $("cancelSelectionBtn")?.addEventListener("click", () => {
   exitSelectionMode();
 });
 
-$("batchMoveBtn")?.addEventListener("click", () => {
-  const ids = [...selectedFileIds];
-  if (!ids.length) return;
-  exitSelectionMode();
-  startInteractiveMove(ids);
+/* PENCIL (RENAME) SELECTED MEDIA OR ALBUM */
+$("batchRenameBtn")?.addEventListener("click", async () => {
+  const fIds = [...selectedFileIds];
+  const dIds = [...selectedFolderIds];
+  if (fIds.length + dIds.length !== 1) return;
+
+  if (fIds.length === 1) {
+    const file = allFilesCache.find(f => f.id === fIds[0]);
+    if (!file) return;
+    exitSelectionMode();
+    await renameFile(file, false);
+    return;
+  }
+
+  if (dIds.length === 1) {
+    const folder = allFoldersCache.find(f => f.id === dIds[0]);
+    if (!folder) return;
+    exitSelectionMode();
+    await renameFolder(folder);
+  }
 });
 
+/* MOVE SELECTED MEDIA OR ALBUMS */
+$("batchMoveBtn")?.addEventListener("click", async () => {
+  const fIds = [...selectedFileIds];
+  const dIds = [...selectedFolderIds];
+  if (fIds.length + dIds.length === 0) return;
+
+  exitSelectionMode();
+  await startInteractiveMove({ fileIds: fIds, folderIds: dIds });
+});
+
+/* DELETE SELECTED MEDIA AND/OR ALBUMS */
 $("batchDeleteBtn")?.addEventListener("click", async () => {
-  const ids = [...selectedFileIds];
-  if (!ids.length) return;
+  const fIds = [...selectedFileIds];
+  const dIds = [...selectedFolderIds];
+  const totalCount = fIds.length + dIds.length;
+  if (totalCount === 0) return;
 
   const confirmed = await showConfirmModal({
     eyebrow: "Permanent Action",
-    title: `Delete ${ids.length} item(s)?`,
-    description: `All ${ids.length} selected image(s)/video(s) will be permanently removed from your vault.`,
+    title: `Delete ${totalCount} item(s)?`,
+    description: `All ${totalCount} selected item(s) and their contents will be permanently removed from your vault.`,
     confirmText: "Delete",
     danger: true
   });
@@ -616,25 +704,48 @@ $("batchDeleteBtn")?.addEventListener("click", async () => {
 
   try {
     requireUser();
-    const targets = allFilesCache.filter(f => ids.includes(f.id));
-    const paths = targets.map(f => f.object_path).filter(Boolean);
 
+    // Collect all files from selected folders (and subfolders) + directly selected files
+    const extraFolderIds = new Set();
+    for (const dId of dIds) {
+      for (const descId of collectDescendantFolderIds(dId, allFoldersCache)) {
+        extraFolderIds.add(descId);
+      }
+    }
+
+    const folderFiles = allFilesCache.filter(f => f.folder_id && extraFolderIds.has(f.folder_id));
+    const directFiles = allFilesCache.filter(f => fIds.includes(f.id));
+    const combinedFilesMap = new Map();
+    [...directFiles, ...folderFiles].forEach(f => combinedFilesMap.set(f.id, f));
+    const filesToDelete = [...combinedFilesMap.values()];
+
+    const paths = filesToDelete.map(f => f.object_path).filter(Boolean);
     if (paths.length > 0) {
       const { error: storageErr } = await db.storage.from(BUCKET).remove(paths);
       if (storageErr) throw storageErr;
     }
 
-    const { error: dbErr } = await db
-      .from("vault_files")
-      .delete()
-      .in("id", ids)
-      .eq("user_id", user.id);
+    if (filesToDelete.length > 0) {
+      const { error: dbFileErr } = await db
+        .from("vault_files")
+        .delete()
+        .in("id", filesToDelete.map(f => f.id))
+        .eq("user_id", user.id);
+      if (dbFileErr) throw dbFileErr;
+    }
 
-    if (dbErr) throw dbErr;
+    if (extraFolderIds.size > 0) {
+      const { error: dbFolderErr } = await db
+        .from("vault_folders")
+        .delete()
+        .in("id", [...extraFolderIds])
+        .eq("user_id", user.id);
+      if (dbFolderErr) throw dbFolderErr;
+    }
 
     exitSelectionMode();
     await loadVault();
-    showSnackbar(`${ids.length} item(s) deleted.`);
+    showSnackbar(`${totalCount} item(s) deleted.`);
   } catch (error) {
     showError("vaultMessage", error);
   }
@@ -644,8 +755,8 @@ $("batchDeleteBtn")?.addEventListener("click", async () => {
    INTERACTIVE ALBUMS MOVE MODE ("Move here" / "Discard")
 ========================================== */
 
-async function startInteractiveMove(fileIds) {
-  if (!Array.isArray(fileIds) || fileIds.length === 0) return;
+async function startInteractiveMove({ fileIds = [], folderIds = [] }) {
+  if ((!fileIds || fileIds.length === 0) && (!folderIds || folderIds.length === 0)) return;
 
   if ($("previewDialog")?.open) {
     pauseActiveViewerVideo();
@@ -654,7 +765,8 @@ async function startInteractiveMove(fileIds) {
     $("viewerSlide")?.replaceChildren();
   }
 
-  pendingMoveFileIds = [...fileIds];
+  pendingMoveFileIds = fileIds.length ? [...fileIds] : null;
+  pendingMoveFolderIds = folderIds.length ? [...folderIds] : null;
   pendingMoveReturnFolder = currentFolder;
   pendingMoveReturnStack = [...folderStack];
   pendingMoveReturnTab = activeVaultTab;
@@ -674,6 +786,7 @@ async function discardMoveMode() {
   const returnTab = pendingMoveReturnTab || "albums";
 
   pendingMoveFileIds = null;
+  pendingMoveFolderIds = null;
   pendingMoveReturnFolder = null;
   pendingMoveReturnStack = null;
   pendingMoveReturnTab = "albums";
@@ -689,10 +802,11 @@ async function discardMoveMode() {
 }
 
 async function confirmMoveHere() {
-  if (!pendingMoveFileIds || pendingMoveFileIds.length === 0) return;
+  if (!hasPendingMove()) return;
 
   const destFolderId = currentFolder;
-  const idsToMove = [...pendingMoveFileIds];
+  const fIds = pendingMoveFileIds ? [...pendingMoveFileIds] : [];
+  const dIds = pendingMoveFolderIds ? [...pendingMoveFolderIds] : [];
   const returnFolder = pendingMoveReturnFolder;
   const returnStack = pendingMoveReturnStack ? [...pendingMoveReturnStack] : [];
   const returnTab = pendingMoveReturnTab || "albums";
@@ -700,15 +814,34 @@ async function confirmMoveHere() {
   try {
     requireUser();
 
-    const { error } = await db
-      .from("vault_files")
-      .update({ folder_id: destFolderId })
-      .in("id", idsToMove)
-      .eq("user_id", user.id);
+    if (fIds.length > 0) {
+      const { error } = await db
+        .from("vault_files")
+        .update({ folder_id: destFolderId })
+        .in("id", fIds)
+        .eq("user_id", user.id);
+      if (error) throw error;
+    }
 
-    if (error) throw error;
+    if (dIds.length > 0) {
+      const validFolderIds = dIds.filter(id => {
+        if (id === destFolderId) return false;
+        const desc = collectDescendantFolderIds(id, allFoldersCache);
+        return destFolderId === null || !desc.has(destFolderId);
+      });
+
+      if (validFolderIds.length > 0) {
+        const { error: fErr } = await db
+          .from("vault_folders")
+          .update({ parent_id: destFolderId })
+          .in("id", validFolderIds)
+          .eq("user_id", user.id);
+        if (fErr) throw fErr;
+      }
+    }
 
     pendingMoveFileIds = null;
+    pendingMoveFolderIds = null;
     pendingMoveReturnFolder = null;
     pendingMoveReturnStack = null;
     pendingMoveReturnTab = "albums";
@@ -722,7 +855,7 @@ async function confirmMoveHere() {
 
     const destFolder = allFoldersCache.find(f => f.id === destFolderId);
     const destName = destFolder ? destFolder.name : "Albums";
-    showSnackbar(`Moved ${idsToMove.length} item(s) to "${destName}".`);
+    showSnackbar(`Moved ${fIds.length + dIds.length} item(s) to "${destName}".`);
   } catch (error) {
     showError("vaultMessage", error);
   }
@@ -819,6 +952,7 @@ function showPinSetup(mode = "setup") {
 function showCalculator() {
   exitSelectionMode();
   pendingMoveFileIds = null;
+  pendingMoveFolderIds = null;
   calculatorValue = "";
   $("display").textContent = "0";
   $("expression").textContent = "";
@@ -1086,7 +1220,9 @@ async function unlockVault(pin) {
     folderStack = [];
     selectionMode = false;
     selectedFileIds.clear();
+    selectedFolderIds.clear();
     pendingMoveFileIds = null;
+    pendingMoveFolderIds = null;
     syncTabButtonsUI();
     populateSettingsAccountInfo();
 
@@ -1325,7 +1461,7 @@ function updateFolderModeUI(folders) {
 
   const isAllMediaTab = activeVaultTab === "all_media";
   const insideFolder = !isAllMediaTab && Boolean(currentFolder && currentFolderObj);
-  const inMoveMode = Boolean(pendingMoveFileIds && pendingMoveFileIds.length > 0);
+  const inMoveMode = hasPendingMove();
 
   if (wrapper) {
     wrapper.classList.toggle("is-folder-fullscreen", insideFolder);
@@ -1335,7 +1471,6 @@ function updateFolderModeUI(folders) {
     folderMenuWrap.classList.toggle("hidden", !insideFolder || inMoveMode);
   }
 
-  // Keep Folder button on top right in Albums view (and not inside an opened folder or move mode)
   if (addFolderBtn) {
     addFolderBtn.classList.toggle("hidden", isAllMediaTab || insideFolder || inMoveMode);
   }
@@ -1350,7 +1485,8 @@ function updateFolderModeUI(folders) {
 
   if (inMoveMode && moveSummary) {
     const destName = currentFolderObj ? currentFolderObj.name : "Albums";
-    moveSummary.textContent = `Moving ${pendingMoveFileIds.length} item(s) → ${destName}`;
+    const totalMoving = (pendingMoveFileIds?.length || 0) + (pendingMoveFolderIds?.length || 0);
+    moveSummary.textContent = `Moving ${totalMoving} item(s) → ${destName}`;
   }
 
   if (isAllMediaTab) {
@@ -1410,6 +1546,7 @@ async function loadVault(options = {}) {
       ? allFilesCache
       : allFilesCache.filter(file => file.folder_id === currentFolder);
 
+    currentVisibleFolders = folderItems;
     currentFolderMedia = fileItems;
 
     const list = $("fileList");
@@ -1420,6 +1557,7 @@ async function loadVault(options = {}) {
       const folder = folderItems[fIdx];
       const item = document.createElement("div");
       item.className = "folder-card";
+      item.dataset.folderId = folder.id;
       item.setAttribute("role", "button");
       item.setAttribute("tabindex", "0");
       item.setAttribute("aria-label", folder.name);
@@ -1427,7 +1565,6 @@ async function loadVault(options = {}) {
       const thumb = document.createElement("div");
       thumb.className = "folder-thumb";
 
-      // Display top-placed image inside folder as thumbnail picture (no overlay)
       const topImage = findTopImageInFolderTree(folder.id, allFoldersCache, allFilesCache);
 
       if (topImage) {
@@ -1450,16 +1587,71 @@ async function loadVault(options = {}) {
       title.className = "folder-title";
       title.textContent = folder.name;
 
-      const openFolderAction = async () => {
-        if (selectionMode) exitSelectionMode();
-        await enterFolder(folder.id);
+      let pressTimer = null;
+      let longPressTriggered = false;
+
+      const clearPressTimer = () => {
+        if (pressTimer) {
+          clearTimeout(pressTimer);
+          pressTimer = null;
+        }
       };
 
-      item.addEventListener("click", openFolderAction);
+      const startLongPress = () => {
+        if (hasPendingMove()) return;
+        longPressTriggered = false;
+        clearPressTimer();
+        pressTimer = setTimeout(() => {
+          longPressTriggered = true;
+          enterSelectionModeWithFolder(folder.id);
+        }, 450);
+      };
+
+      item.addEventListener("pointerdown", e => {
+        if (e.pointerType === "mouse" && e.button !== 0) return;
+        startLongPress();
+      });
+
+      item.addEventListener("pointerup", clearPressTimer);
+      item.addEventListener("pointercancel", clearPressTimer);
+      item.addEventListener("pointerleave", clearPressTimer);
+
+      item.addEventListener("contextmenu", e => {
+        if (hasPendingMove()) return;
+        e.preventDefault();
+        clearPressTimer();
+        longPressTriggered = true;
+        enterSelectionModeWithFolder(folder.id);
+      });
+
+      item.addEventListener("click", async () => {
+        if (longPressTriggered) {
+          longPressTriggered = false;
+          return;
+        }
+        if (hasPendingMove()) {
+          await enterFolder(folder.id);
+          return;
+        }
+        if (selectionMode) {
+          toggleFolderSelection(folder.id);
+          return;
+        }
+        await enterFolder(folder.id);
+      });
+
       item.addEventListener("keydown", async e => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          await openFolderAction();
+          if (hasPendingMove()) {
+            await enterFolder(folder.id);
+            return;
+          }
+          if (selectionMode) {
+            toggleFolderSelection(folder.id);
+            return;
+          }
+          await enterFolder(folder.id);
         }
       });
 
@@ -1467,8 +1659,8 @@ async function loadVault(options = {}) {
       fragment.append(item);
     }
 
-    // Place "+" card right at the beginning before first image inside a folder
-    if (insideFolder && !pendingMoveFileIds && !selectionMode) {
+    // Plus card in the shape of a media card before the first image inside a folder
+    if (insideFolder && !hasPendingMove()) {
       const addSlotCard = document.createElement("button");
       addSlotCard.type = "button";
       addSlotCard.className = "add-media-slot-card";
@@ -1531,7 +1723,7 @@ async function loadVault(options = {}) {
       };
 
       const startLongPress = () => {
-        if (pendingMoveFileIds) return;
+        if (hasPendingMove()) return;
         longPressTriggered = false;
         clearPressTimer();
         pressTimer = setTimeout(() => {
@@ -1550,7 +1742,7 @@ async function loadVault(options = {}) {
       card.addEventListener("pointerleave", clearPressTimer);
 
       card.addEventListener("contextmenu", e => {
-        if (pendingMoveFileIds) return;
+        if (hasPendingMove()) return;
         e.preventDefault();
         clearPressTimer();
         longPressTriggered = true;
@@ -1562,7 +1754,7 @@ async function loadVault(options = {}) {
           longPressTriggered = false;
           return;
         }
-        if (pendingMoveFileIds) {
+        if (hasPendingMove()) {
           return;
         }
         if (selectionMode) {
@@ -1575,7 +1767,7 @@ async function loadVault(options = {}) {
       card.addEventListener("keydown", async e => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          if (pendingMoveFileIds) return;
+          if (hasPendingMove()) return;
           if (selectionMode) {
             toggleFileSelection(file.id);
             return;
@@ -1603,7 +1795,7 @@ async function loadVault(options = {}) {
     if (!folderItems.length && !fileItems.length && !insideFolder) {
       const empty = document.createElement("div");
       empty.className = "empty-state";
-      const subText = pendingMoveFileIds
+      const subText = hasPendingMove()
         ? "Tap Move here above to place items in this album."
         : isAllMediaTab
           ? "No photos or videos uploaded yet."
@@ -1904,7 +2096,7 @@ $("viewerRenameBtn").addEventListener("click", async () => {
 $("viewerMoveBtn")?.addEventListener("click", async () => {
   const file = currentFolderMedia[activeViewerIndex];
   if (!file) return;
-  await startInteractiveMove([file.id]);
+  await startInteractiveMove({ fileIds: [file.id] });
 });
 
 $("viewerDeleteBtn").addEventListener("click", async () => {
