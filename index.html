@@ -224,6 +224,28 @@
       background: var(--surface-high);
     }
 
+    .plus-only-btn {
+      width: 42px;
+      height: 42px;
+      min-width: 42px;
+      border-radius: var(--radius-full);
+      border: 0;
+      background: var(--accent-action);
+      color: #0B0D10;
+      display: grid;
+      place-items: center;
+      box-shadow: 0 6px 18px rgba(216, 148, 34, 0.28);
+      transition: transform 0.12s cubic-bezier(0.2, 0, 0, 1), background-color 0.14s ease;
+    }
+
+    .plus-only-btn:hover {
+      background: var(--accent-action-hover);
+    }
+
+    .plus-only-btn:active {
+      transform: scale(0.94);
+    }
+
     .solid-danger-btn {
       min-height: 50px;
       width: 100%;
@@ -635,12 +657,12 @@
       max-width: 720px;
       min-height: 100dvh;
       margin: 0 auto;
-      padding-bottom: calc(92px + env(safe-area-inset-bottom));
+      padding-bottom: calc(116px + env(safe-area-inset-bottom));
     }
 
     .vault-wrapper.is-folder-fullscreen {
       max-width: 100vw;
-      padding-bottom: calc(96px + env(safe-area-inset-bottom));
+      padding-bottom: calc(120px + env(safe-area-inset-bottom));
     }
 
     .vault-appbar {
@@ -728,11 +750,11 @@
       position: fixed;
       left: 16px;
       right: 16px;
-      bottom: calc(16px + env(safe-area-inset-bottom));
+      bottom: calc(82px + env(safe-area-inset-bottom));
       z-index: 45;
       max-width: 540px;
       margin: 0 auto;
-      padding: 12px 14px;
+      padding: 10px 12px;
       border-radius: var(--radius-xl);
       background: var(--surface-high);
       border: 1px solid var(--outline-strong);
@@ -743,37 +765,58 @@
       gap: 10px;
     }
 
-    .vault-body {
-      padding: 18px 16px 24px;
+    /* FLOATING BOTTOM TABS (ALL MEDIA / ALBUMS) */
+    .floating-tabs-bar {
+      position: fixed;
+      left: 16px;
+      right: 16px;
+      bottom: calc(16px + env(safe-area-inset-bottom));
+      z-index: 40;
+      max-width: 360px;
+      margin: 0 auto;
+      padding: 6px;
+      border-radius: var(--radius-full);
+      background: rgba(20, 24, 31, 0.92);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid var(--outline-strong);
+      box-shadow: 0 14px 36px rgba(0, 0, 0, 0.65);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
     }
 
-    .upload-fab-btn {
-      width: 100%;
-      min-height: 58px;
+    .floating-tab-btn {
+      min-height: 44px;
       border: 0;
-      border-radius: var(--radius-lg);
-      background: var(--accent-action);
-      color: #0B0D10;
-      font-size: 16px;
-      font-weight: 700;
-      display: flex;
+      border-radius: var(--radius-full);
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 14px;
+      font-weight: 600;
+      display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 10px;
-      box-shadow: 0 8px 24px rgba(216, 148, 34, 0.25);
-      transition: transform 0.12s cubic-bezier(0.2, 0, 0, 1), background-color 0.15s ease;
+      gap: 7px;
+      transition: background-color 0.16s ease, color 0.16s ease, transform 0.12s ease;
     }
 
-    .upload-fab-btn:hover {
-      background: var(--accent-action-hover);
+    .floating-tab-btn.is-active {
+      background: var(--accent-action);
+      color: #0B0D10;
+      font-weight: 700;
     }
 
-    .upload-fab-btn:active {
-      transform: scale(0.98);
+    .floating-tab-btn:active {
+      transform: scale(0.96);
+    }
+
+    .vault-body {
+      padding: 16px 16px 24px;
     }
 
     .upload-progress-card {
-      margin-top: 12px;
+      margin-bottom: 14px;
       padding: 12px 14px;
       border-radius: var(--radius-md);
       background: var(--surface-container);
@@ -803,8 +846,9 @@
       gap: 10px;
     }
 
-    /* Clean Folder Card: Preview Icon + Full Folder Name Only */
+    /* Folder Card: Top-Placed Image Thumbnail + Full Folder Name Only */
     .folder-card {
+      position: relative;
       min-width: 0;
       display: flex;
       flex-direction: column;
@@ -837,7 +881,7 @@
       overflow: hidden;
     }
 
-    .folder-video-thumb {
+    .folder-cover-img {
       width: 100%;
       height: 100%;
       object-fit: cover;
@@ -845,19 +889,20 @@
       pointer-events: none;
     }
 
-    .folder-video-tag {
+    .folder-plus-badge {
       position: absolute;
       bottom: 6px;
       right: 6px;
-      width: 22px;
-      height: 22px;
+      width: 28px;
+      height: 28px;
       border-radius: var(--radius-full);
-      background: rgba(11, 13, 16, 0.78);
-      color: var(--primary);
+      border: 0;
+      background: var(--accent-action);
+      color: #0B0D10;
       display: grid;
       place-items: center;
-      font-size: 10px;
-      pointer-events: none;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+      z-index: 3;
     }
 
     .folder-title {
@@ -1137,7 +1182,7 @@
       position: fixed;
       left: 16px;
       right: 16px;
-      bottom: calc(22px + env(safe-area-inset-bottom));
+      bottom: calc(74px + env(safe-area-inset-bottom));
       z-index: 60;
       max-width: 460px;
       margin: 0 auto;
@@ -1182,7 +1227,7 @@
     @media (min-width: 600px) {
       .vault-wrapper:not(.is-folder-fullscreen) {
         padding-top: 18px;
-        padding-bottom: 44px;
+        padding-bottom: 120px;
       }
 
       .vault-wrapper:not(.is-folder-fullscreen) .vault-appbar {
@@ -1442,11 +1487,19 @@
 
             <div class="min-w-0">
               <h1 id="vaultScreenTitle" class="text-xl font-bold tracking-tight truncate">My Vault</h1>
-              <p id="folderPath" class="m3-muted text-xs truncate mt-0.5">My files</p>
+              <p id="folderPath" class="m3-muted text-xs truncate mt-0.5">Albums</p>
             </div>
           </div>
 
           <div class="flex items-center gap-2 shrink-0">
+            <!-- Plus-only icon inside folder (no label) -->
+            <button id="insideFolderPlusBtn" type="button" class="plus-only-btn hidden" aria-label="Add media">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+            </button>
+
             <button id="addFolderBtn" type="button" class="secondary-btn" style="min-height:42px;padding:0 14px;font-size:13.5px;">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
@@ -1488,11 +1541,19 @@
 
       <main class="vault-body">
 
+        <input
+          id="fileInput"
+          type="file"
+          accept="image/*,video/*"
+          multiple
+          hidden
+        >
+
         <!-- INTERACTIVE MOVE DESTINATION BAR ("Move here" & "Discard") -->
         <div id="moveModeBar" class="mode-action-bar hidden">
           <div class="min-w-0">
-            <div class="m3-eyebrow">Move Destination</div>
-            <div id="moveModeSummary" class="text-sm font-semibold truncate">Select destination folder</div>
+            <div class="m3-eyebrow">Albums Destination</div>
+            <div id="moveModeSummary" class="text-sm font-semibold truncate">Select destination album</div>
           </div>
           <div class="flex items-center gap-2 shrink-0">
             <button id="moveDiscardBtn" type="button" class="secondary-btn" style="min-height:40px;padding:0 14px;font-size:13px;">
@@ -1520,22 +1581,6 @@
           </div>
         </div>
 
-        <button id="uploadBtn" type="button" class="upload-fab-btn">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-          </svg>
-          Add Files
-        </button>
-
-        <input
-          id="fileInput"
-          type="file"
-          accept="image/*,video/*"
-          multiple
-          hidden
-        >
-
         <div id="uploadProgressWrap" class="upload-progress-card hidden">
           <div class="flex items-center justify-between text-xs font-medium">
             <span id="uploadProgressLabel" class="truncate">Uploading...</span>
@@ -1546,8 +1591,8 @@
           </div>
         </div>
 
-        <div class="flex items-center justify-between mt-6 mb-3 px-0.5">
-          <h2 id="gallerySectionTitle" class="text-sm font-bold uppercase tracking-wider m3-muted">Gallery &amp; Folders</h2>
+        <div class="flex items-center justify-between mt-1 mb-3 px-0.5">
+          <h2 id="gallerySectionTitle" class="text-sm font-bold uppercase tracking-wider m3-muted">Albums</h2>
           <span class="text-xs m3-muted">Hold media to select</span>
         </div>
 
@@ -1561,7 +1606,7 @@
               </svg>
             </div>
             <div class="font-semibold text-sm text-[var(--text)]">Nothing here yet</div>
-            <div class="text-xs mt-1">Create a folder or tap Add Files to upload photos and videos.</div>
+            <div class="text-xs mt-1">Create an album folder using the Folder button above.</div>
           </div>
         </div>
 
@@ -1576,6 +1621,25 @@
           Delete selected
         </button>
       </div>
+
+      <!-- TWO FLOATING BOTTOM TABS: ALL MEDIA & ALBUMS -->
+      <nav id="floatingTabsBar" class="floating-tabs-bar" aria-label="Vault sections">
+        <button id="tabAllMediaBtn" type="button" class="floating-tab-btn" aria-pressed="false">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="3"></rect>
+            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+            <polyline points="21 15 16 10 5 21"></polyline>
+          </svg>
+          All media
+        </button>
+
+        <button id="tabAlbumsBtn" type="button" class="floating-tab-btn is-active" aria-pressed="true">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+          </svg>
+          Albums
+        </button>
+      </nav>
 
     </div>
   </section>
@@ -1680,7 +1744,7 @@
           </svg>
         </button>
 
-        <button id="viewerMoveBtn" type="button" class="viewer-icon-btn" aria-label="Move media to folder" title="Move to folder">
+        <button id="viewerMoveBtn" type="button" class="viewer-icon-btn" aria-label="Move media to album" title="Move to album">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
             <path d="M12 11v6"></path>
