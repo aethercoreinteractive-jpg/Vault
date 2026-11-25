@@ -1,7 +1,8 @@
 
 /* ==========================================
    CALCULATOR VAULT
-   Supabase + Calculator + Private File Vault
+   Supabase Authentication + Cloud PIN
+   Private File Vault
 ========================================== */
 
 const SUPABASE_URL = "https://rtvdmtsdzybqrlwtowrx.supabase.co";
@@ -22,9 +23,7 @@ let folderStack = [];
 let calculatorValue = "";
 let pinMode = "setup";
 let firstPin = "";
-
-let failedAttempts = 0;
-let lockUntil = 0;
+let currentPinForChange = "";
 let previewUrl = null;
 
 const screens = [
@@ -46,76 +45,64 @@ function showScreen(id) {
   $(id).classList.remove("hidden");
 }
 
-function showMessage(id, text) {
-  $(id).textContent = text || "";
+function showMessage(id, message) {
+  $(id).textContent = message || "";
 }
 
 /* ==========================================
-   SECURE PIN HASHING
+   CLOUD PIN FUNCTIONS
+   PIN is never saved on the device.
 ========================================== */
 
-function toHex(bytes) {
-  return Array.from(bytes)
-    .map(byte => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-async function hashPin(pin, existingSalt = null) {
-  const salt = existingSalt
-    ? Uint8Array.from(
-        existingSalt.match(/.{2}/g),
-        value => parseInt(value, 16)
-      )
-    : crypto.getRandomValues(new Uint8Array(16));
-
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(pin),
-    "PBKDF2",
-    false,
-    ["deriveBits"]
+async function callPinFunction(payload) {
+  const { data, error } = await db.functions.invoke(
+    "vault-pin",
+    { body: payload }
   );
 
-  const result = await crypto.subtle.deriveBits(
-    {
-      name: "PBKDF2",
-      salt,
-      iterations: 250000,
-      hash: "SHA-256"
-    },
-    key,
-    256
-  );
+  if (error) {
+    throw new Error(
+      data?.error ||
+      error.message ||
+      "Unable to contact the PIN server."
+    );
+  }
 
-  return {
-    salt: toHex(salt),
-    hash: toHex(result)
-  };
+  if (data?.error) {
+    throw new Error(data.error);
+  }
+
+  return data;
 }
 
-async function savePin(pin) {
-  const result = await hashPin(pin);
+async function checkCloudPin() {
+  const result = await callPinFunction({
+    action: "status"
+  });
 
-  localStorage.setItem("vault_pin_salt", result.salt);
-  localStorage.setItem("vault_pin_hash", result.hash);
+  return result.hasPin;
 }
 
-async function verifyPin(pin) {
-  const salt = localStorage.getItem("vault_pin_salt");
-  const savedHash = localStorage.getItem("vault_pin_hash");
-
-  if (!salt || !savedHash) return false;
-
-  const result = await hashPin(pin, salt);
-
-  return result.hash === savedHash;
+async function createCloudPin(pin) {
+  return await callPinFunction({
+    action: "setup",
+    pin: String(pin)
+  });
 }
 
-function hasPin() {
-  return Boolean(
-    localStorage.getItem("vault_pin_hash") &&
-    localStorage.getItem("vault_pin_salt")
-  );
+async function verifyCloudPin(pin) {
+  return await callPinFunction({
+    action: "verify",
+    pin: String(pin)
+  });
+}
+
+async function changeCloudPin(oldPin, newPin) {
+  return await callPinFunction({
+    action: "change",
+    pin: String(oldPin),
+    newPin: String(newPin)
+  });
 }
 
 /* ==========================================
@@ -127,6 +114,8 @@ function showPinSetup(mode = "setup") {
   firstPin = "";
 
   $("pinInput").value = "";
+  $("pinContinue").disabled = false;
+  $("pinContinue").textContent = "Continue";
 
   if (mode === "verifyCurrent") {
     $("pinTitle").textContent = "Verify current PIN";
@@ -141,8 +130,6 @@ function showPinSetup(mode = "setup") {
     $("pinDescription").textContent =
       "Choose your private calculator PIN";
   }
-
-  $("pinContinue").textContent = "Continue";
 
   showMessage("pinMessage", "");
   showScreen("pinScreen");
@@ -185,7 +172,7 @@ $("signupBtn").addEventListener("click", async () => {
 
   if (data.session) {
     user = data.user;
-    afterLogin();
+    await afterLogin();
   } else {
     showMessage(
       "authMessage",
@@ -217,20 +204,34 @@ $("loginBtn").addEventListener("click", async () => {
   }
 
   user = data.user;
-  afterLogin();
+  await afterLogin();
 });
 
-function afterLogin() {
-  if (hasPin()) {
-    showCalculator();
-  } else {
-    showPinSetup("setup");
+async function afterLogin() {
+  try {
+    showMessage("authMessage", "Checking your secure PIN...");
+
+    const hasPin = await checkCloudPin();
+
+    if (hasPin) {
+      showCalculator();
+    } else {
+      showPinSetup("setup");
+    }
+  } catch (error) {
+    showScreen("authScreen");
+    showMessage("authMessage", error.message);
   }
 }
 
 /* ==========================================
    PIN CREATION, CONFIRMATION AND CHANGE
 ========================================== */
+
+$("pinInput").addEventListener("input", () => {
+  $("pinInput").value =
+    $("pinInput").value.replace(/\D/g, "").slice(0, 8);
+});
 
 $("pinContinue").addEventListener("click", async () => {
   const pin = $("pinInput").value;
@@ -242,63 +243,74 @@ $("pinContinue").addEventListener("click", async () => {
     );
   }
 
-  // Verify existing PIN before allowing a change.
-  if (pinMode === "verifyCurrent") {
-    const valid = await verifyPin(pin);
+  $("pinContinue").disabled = true;
+  showMessage("pinMessage", "Please wait...");
 
-    if (!valid) {
-      $("pinInput").value = "";
+  try {
+    // Verify the existing PIN before changing it.
+    if (pinMode === "verifyCurrent") {
+      await verifyCloudPin(pin);
 
-      return showMessage(
-        "pinMessage",
-        "Incorrect current PIN."
-      );
+      currentPinForChange = pin;
+
+      showPinSetup("change");
+      return;
     }
 
-    showPinSetup("change");
-    return;
-  }
+    // First entry: remember the PIN temporarily in memory.
+    if (pinMode === "setup" || pinMode === "change") {
+      firstPin = pin;
+      pinMode = "confirm";
 
-  // First PIN entry.
-  if (pinMode === "setup" || pinMode === "change") {
-    firstPin = pin;
-    pinMode = "confirm";
-
-    $("pinInput").value = "";
-    $("pinTitle").textContent = "Confirm your PIN";
-    $("pinDescription").textContent =
-      "Enter the same PIN again";
-
-    showMessage("pinMessage", "");
-    return;
-  }
-
-  // Confirm PIN.
-  if (pinMode === "confirm") {
-    if (pin !== firstPin) {
-      firstPin = "";
       $("pinInput").value = "";
+      $("pinTitle").textContent = "Confirm your PIN";
+      $("pinDescription").textContent =
+        "Enter the same PIN again";
 
-      pinMode = hasPin() ? "change" : "setup";
+      showMessage("pinMessage", "");
+      return;
+    }
 
-      $("pinTitle").textContent =
-        pinMode === "change"
+    // Confirm the new PIN.
+    if (pinMode === "confirm") {
+      if (pin !== firstPin) {
+        firstPin = "";
+        $("pinInput").value = "";
+
+        const wasChanging = Boolean(currentPinForChange);
+
+        pinMode = wasChanging ? "change" : "setup";
+
+        $("pinTitle").textContent = wasChanging
           ? "Create new PIN"
           : "Create your PIN";
 
-      $("pinDescription").textContent =
-        "PINs did not match. Try again.";
+        $("pinDescription").textContent =
+          "The PINs did not match. Try again.";
 
-      return showMessage(
-        "pinMessage",
-        "The PINs do not match."
-      );
+        return showMessage(
+          "pinMessage",
+          "The PINs do not match."
+        );
+      }
+
+      if (currentPinForChange) {
+        await changeCloudPin(currentPinForChange, pin);
+        currentPinForChange = "";
+      } else {
+        await createCloudPin(pin);
+      }
+
+      firstPin = "";
+      showCalculator();
+
+      alert("PIN saved securely to your Supabase account.");
     }
 
-    await savePin(pin);
-
-    firstPin = "";
-    showCalculator();
+  } catch (error) {
+    showMessage("pinMessage", error.message);
+  } finally {
+    $("pinContinue").disabled = false;
   }
 });
 
@@ -329,7 +341,7 @@ document.querySelectorAll(".key").forEach(button => {
     }
 
     if (action === "equals") {
-      // A 4–8 digit number entered alone is treated as a PIN.
+      // A standalone 4–8 digit number is treated as a PIN.
       if (/^\d{4,8}$/.test(calculatorValue)) {
         const enteredPin = calculatorValue;
 
@@ -388,34 +400,18 @@ function calculate() {
 ========================================== */
 
 async function unlockVault(pin) {
-  if (Date.now() < lockUntil) {
-    return showMessage(
-      "expression",
-      "Too many attempts. Please wait."
-    );
+  $("expression").textContent = "Checking PIN...";
+
+  try {
+    await verifyCloudPin(pin);
+    await openVault();
+  } catch (error) {
+    $("expression").textContent =
+      error.message || "Incorrect PIN";
+
+    calculatorValue = "";
+    updateDisplay();
   }
-
-  const valid = await verifyPin(pin);
-
-  if (!valid) {
-    failedAttempts++;
-
-    $("expression").textContent = "Incorrect PIN";
-
-    if (failedAttempts >= 5) {
-      lockUntil = Date.now() + 30000;
-      failedAttempts = 0;
-
-      $("expression").textContent =
-        "Locked for 30 seconds";
-    }
-
-    return;
-  }
-
-  failedAttempts = 0;
-
-  await openVault();
 }
 
 async function openVault() {
@@ -474,10 +470,7 @@ async function loadVault() {
     .order("name");
 
   if (folderError) {
-    return showMessage(
-      "vaultMessage",
-      folderError.message
-    );
+    return showMessage("vaultMessage", folderError.message);
   }
 
   const { data: files, error: fileError } = await db
@@ -487,16 +480,11 @@ async function loadVault() {
     .order("created_at", { ascending: false });
 
   if (fileError) {
-    return showMessage(
-      "vaultMessage",
-      fileError.message
-    );
+    return showMessage("vaultMessage", fileError.message);
   }
 
   $("folderPath").textContent =
-    folderStack.length > 0
-      ? "Inside folder"
-      : "My files";
+    folderStack.length > 0 ? "Inside folder" : "My files";
 
   const folderItems = folders.filter(
     folder => folder.parent_id === currentFolder
@@ -532,17 +520,11 @@ async function loadVault() {
 
     const rename = document.createElement("button");
     rename.textContent = "Rename";
-    rename.addEventListener(
-      "click",
-      () => renameFolder(folder)
-    );
+    rename.addEventListener("click", () => renameFolder(folder));
 
     const remove = document.createElement("button");
     remove.textContent = "Delete";
-    remove.addEventListener(
-      "click",
-      () => deleteFolder(folder)
-    );
+    remove.addEventListener("click", () => deleteFolder(folder));
 
     item.append(icon, info, open, rename, remove);
     list.append(item);
@@ -556,9 +538,7 @@ async function loadVault() {
     icon.className = "file-icon";
 
     icon.textContent =
-      file.mime_type?.startsWith("video/")
-        ? "🎬"
-        : "🖼️";
+      file.mime_type?.startsWith("video/") ? "🎬" : "🖼️";
 
     const info = document.createElement("div");
     info.className = "file-info";
@@ -566,24 +546,15 @@ async function loadVault() {
 
     const preview = document.createElement("button");
     preview.textContent = "View";
-    preview.addEventListener(
-      "click",
-      () => previewFile(file)
-    );
+    preview.addEventListener("click", () => previewFile(file));
 
     const rename = document.createElement("button");
     rename.textContent = "Rename";
-    rename.addEventListener(
-      "click",
-      () => renameFile(file)
-    );
+    rename.addEventListener("click", () => renameFile(file));
 
     const remove = document.createElement("button");
     remove.textContent = "Delete";
-    remove.addEventListener(
-      "click",
-      () => deleteFile(file)
-    );
+    remove.addEventListener("click", () => deleteFile(file));
 
     item.append(icon, info, preview, rename, remove);
     list.append(item);
@@ -636,10 +607,7 @@ $("fileInput").addEventListener("change", async event => {
       });
 
     if (uploadError) {
-      showMessage(
-        "vaultMessage",
-        uploadError.message
-      );
+      showMessage("vaultMessage", uploadError.message);
       continue;
     }
 
@@ -655,19 +623,12 @@ $("fileInput").addEventListener("change", async event => {
       });
 
     if (databaseError) {
-      await db.storage
-        .from(BUCKET)
-        .remove([objectPath]);
-
-      showMessage(
-        "vaultMessage",
-        databaseError.message
-      );
+      await db.storage.from(BUCKET).remove([objectPath]);
+      showMessage("vaultMessage", databaseError.message);
     }
   }
 
   event.target.value = "";
-
   await loadVault();
 });
 
@@ -681,10 +642,7 @@ async function previewFile(file) {
     .createSignedUrl(file.object_path, 300);
 
   if (error) {
-    return showMessage(
-      "vaultMessage",
-      error.message
-    );
+    return showMessage("vaultMessage", error.message);
   }
 
   $("previewName").textContent = file.file_name;
@@ -693,9 +651,7 @@ async function previewFile(file) {
   content.replaceChildren();
 
   const media = document.createElement(
-    file.mime_type?.startsWith("video/")
-      ? "video"
-      : "img"
+    file.mime_type?.startsWith("video/") ? "video" : "img"
   );
 
   media.src = data.signedUrl;
@@ -708,7 +664,6 @@ async function previewFile(file) {
   }
 
   content.append(media);
-
   $("previewDialog").showModal();
 }
 
@@ -722,26 +677,18 @@ $("closePreviewBtn").addEventListener("click", () => {
 ========================================== */
 
 async function renameFile(file) {
-  const newName = prompt(
-    "Enter new file name:",
-    file.file_name
-  );
+  const newName = prompt("Enter new file name:", file.file_name);
 
   if (!newName || !newName.trim()) return;
 
   const { error } = await db
     .from("vault_files")
-    .update({
-      file_name: newName.trim()
-    })
+    .update({ file_name: newName.trim() })
     .eq("id", file.id)
     .eq("user_id", user.id);
 
   if (error) {
-    return showMessage(
-      "vaultMessage",
-      error.message
-    );
+    return showMessage("vaultMessage", error.message);
   }
 
   await loadVault();
@@ -759,10 +706,7 @@ async function deleteFile(file) {
     .remove([file.object_path]);
 
   if (storageError) {
-    return showMessage(
-      "vaultMessage",
-      storageError.message
-    );
+    return showMessage("vaultMessage", storageError.message);
   }
 
   const { error } = await db
@@ -772,10 +716,7 @@ async function deleteFile(file) {
     .eq("user_id", user.id);
 
   if (error) {
-    return showMessage(
-      "vaultMessage",
-      error.message
-    );
+    return showMessage("vaultMessage", error.message);
   }
 
   await loadVault();
@@ -786,26 +727,18 @@ async function deleteFile(file) {
 ========================================== */
 
 async function renameFolder(folder) {
-  const name = prompt(
-    "Enter new folder name:",
-    folder.name
-  );
+  const name = prompt("Enter new folder name:", folder.name);
 
   if (!name || !name.trim()) return;
 
   const { error } = await db
     .from("vault_folders")
-    .update({
-      name: name.trim()
-    })
+    .update({ name: name.trim() })
     .eq("id", folder.id)
     .eq("user_id", user.id);
 
   if (error) {
-    return showMessage(
-      "vaultMessage",
-      error.message
-    );
+    return showMessage("vaultMessage", error.message);
   }
 
   await loadVault();
@@ -816,36 +749,22 @@ async function renameFolder(folder) {
 ========================================== */
 
 async function deleteFolder(folder) {
-  const { count: folderCount, error: folderError } =
-    await db
-      .from("vault_folders")
-      .select("id", {
-        count: "exact",
-        head: true
-      })
-      .eq("parent_id", folder.id);
+  const { count: folderCount, error: folderError } = await db
+    .from("vault_folders")
+    .select("id", { count: "exact", head: true })
+    .eq("parent_id", folder.id);
 
   if (folderError) {
-    return showMessage(
-      "vaultMessage",
-      folderError.message
-    );
+    return showMessage("vaultMessage", folderError.message);
   }
 
-  const { count: fileCount, error: fileError } =
-    await db
-      .from("vault_files")
-      .select("id", {
-        count: "exact",
-        head: true
-      })
-      .eq("folder_id", folder.id);
+  const { count: fileCount, error: fileError } = await db
+    .from("vault_files")
+    .select("id", { count: "exact", head: true })
+    .eq("folder_id", folder.id);
 
   if (fileError) {
-    return showMessage(
-      "vaultMessage",
-      fileError.message
-    );
+    return showMessage("vaultMessage", fileError.message);
   }
 
   if (folderCount || fileCount) {
@@ -864,10 +783,7 @@ async function deleteFolder(folder) {
     .eq("user_id", user.id);
 
   if (error) {
-    return showMessage(
-      "vaultMessage",
-      error.message
-    );
+    return showMessage("vaultMessage", error.message);
   }
 
   await loadVault();
@@ -887,6 +803,7 @@ $("closeSettingsBtn").addEventListener("click", () => {
 
 $("changePinBtn").addEventListener("click", () => {
   $("settingsDialog").close();
+  currentPinForChange = "";
   showPinSetup("verifyCurrent");
 });
 
@@ -896,13 +813,12 @@ $("signOutBtn").addEventListener("click", async () => {
   const { error } = await db.auth.signOut();
 
   if (error) {
-    return showMessage(
-      "authMessage",
-      error.message
-    );
+    return showMessage("authMessage", error.message);
   }
 
   user = null;
+  currentPinForChange = "";
+  firstPin = "";
 
   $("settingsDialog").close();
   showScreen("authScreen");
@@ -913,15 +829,6 @@ $("signOutBtn").addEventListener("click", async () => {
 ========================================== */
 
 async function startApp() {
-  if (!window.crypto?.subtle) {
-    showScreen("authScreen");
-
-    return showMessage(
-      "authMessage",
-      "HTTPS is required for secure PIN storage."
-    );
-  }
-
   const { data, error } = await db.auth.getSession();
 
   if (error) {
@@ -936,11 +843,7 @@ async function startApp() {
     return;
   }
 
-  if (hasPin()) {
-    showCalculator();
-  } else {
-    showPinSetup("setup");
-  }
+  await afterLogin();
 }
 
 db.auth.onAuthStateChange((_event, session) => {
