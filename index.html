@@ -63,7 +63,7 @@
       -webkit-font-smoothing: antialiased;
     }
 
-    button, input {
+    button, input, select {
       font: inherit;
     }
 
@@ -204,6 +204,21 @@
 
     .secondary-btn:hover:not(:disabled) {
       background: var(--surface-high);
+    }
+
+    .danger-pill-btn {
+      min-height: 40px;
+      padding: 0 14px;
+      border-radius: var(--radius-full);
+      border: 1px solid rgba(242, 139, 130, 0.34);
+      background: rgba(217, 48, 37, 0.16);
+      color: var(--danger);
+      font-size: 13px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
     }
 
     .icon-btn {
@@ -638,11 +653,16 @@
       padding-bottom: calc(36px + env(safe-area-inset-bottom));
     }
 
+    .vault-wrapper.is-folder-fullscreen {
+      max-width: 100vw;
+      padding-bottom: calc(44px + env(safe-area-inset-bottom));
+    }
+
     .vault-appbar {
       position: sticky;
       top: 0;
       z-index: 10;
-      background: rgba(11, 13, 16, 0.88);
+      background: rgba(11, 13, 16, 0.92);
       backdrop-filter: blur(18px);
       -webkit-backdrop-filter: blur(18px);
       border-bottom: 1px solid var(--outline);
@@ -654,6 +674,19 @@
       align-items: center;
       justify-content: space-between;
       gap: 10px;
+    }
+
+    .folder-manage-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding: 12px 14px;
+      border-radius: var(--radius-lg);
+      background: var(--surface);
+      border: 1px solid var(--outline);
+      margin-bottom: 16px;
     }
 
     .vault-body {
@@ -716,56 +749,71 @@
       gap: 10px;
     }
 
+    /* Clean Folder Card: Preview Icon + Full Folder Name Only */
     .folder-card {
       min-width: 0;
       display: flex;
       flex-direction: column;
-      justify-content: space-between;
       gap: 8px;
-      padding: 10px;
+      padding: 8px;
       border-radius: var(--radius-md);
       background: var(--surface);
       border: 1px solid var(--outline);
-      overflow: hidden;
+      cursor: pointer;
+      transition: transform 0.12s cubic-bezier(0.2, 0, 0, 1), border-color 0.14s ease;
+    }
+
+    .folder-card:hover {
+      border-color: var(--outline-strong);
+    }
+
+    .folder-card:active {
+      transform: scale(0.97);
     }
 
     .folder-thumb {
+      position: relative;
       width: 100%;
-      height: 76px;
+      aspect-ratio: 1 / 1;
       border-radius: var(--radius-sm);
       background: var(--surface-container);
       display: grid;
       place-items: center;
-      font-size: 28px;
-      cursor: pointer;
+      font-size: 30px;
+      overflow: hidden;
+    }
+
+    .folder-video-thumb {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      pointer-events: none;
+    }
+
+    .folder-video-tag {
+      position: absolute;
+      bottom: 6px;
+      right: 6px;
+      width: 22px;
+      height: 22px;
+      border-radius: var(--radius-full);
+      background: rgba(11, 13, 16, 0.78);
+      color: var(--primary);
+      display: grid;
+      place-items: center;
+      font-size: 10px;
+      pointer-events: none;
     }
 
     .folder-title {
-      font-size: 13px;
+      font-size: 12.5px;
       font-weight: 600;
-      line-height: 1.3;
+      line-height: 1.35;
       color: var(--text);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .folder-actions {
-      display: flex;
-      gap: 4px;
-    }
-
-    .folder-card button {
-      flex: 1 1 auto;
-      min-width: 0;
-      min-height: 30px;
-      padding: 0 6px;
-      border-radius: 9px;
-      border: 1px solid var(--outline);
-      background: var(--surface-container);
-      color: var(--text);
-      font-size: 11px;
-      font-weight: 600;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      text-align: center;
     }
 
     /* Media Card in Grid */
@@ -916,7 +964,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 28px;
+      gap: 24px;
       padding: 14px 20px calc(18px + env(safe-area-inset-bottom));
       background: linear-gradient(to top, rgba(6, 8, 10, 0.9), rgba(6, 8, 10, 0));
     }
@@ -1047,12 +1095,12 @@
     }
 
     @media (min-width: 600px) {
-      .vault-wrapper {
+      .vault-wrapper:not(.is-folder-fullscreen) {
         padding-top: 18px;
         padding-bottom: 36px;
       }
 
-      .vault-appbar {
+      .vault-wrapper:not(.is-folder-fullscreen) .vault-appbar {
         position: static;
         border: 1px solid var(--outline);
         border-radius: var(--radius-xl);
@@ -1295,7 +1343,7 @@
 
   <!-- 4. PRIVATE VAULT SCREEN -->
   <section id="vaultScreen" class="screen hidden">
-    <div class="vault-wrapper">
+    <div id="vaultWrapper" class="vault-wrapper">
 
       <header class="vault-appbar">
         <div class="vault-appbar-inner">
@@ -1308,7 +1356,7 @@
             </button>
 
             <div class="min-w-0">
-              <h1 class="text-xl font-bold tracking-tight truncate">My Vault</h1>
+              <h1 id="vaultScreenTitle" class="text-xl font-bold tracking-tight truncate">My Vault</h1>
               <p id="folderPath" class="m3-muted text-xs truncate mt-0.5">My files</p>
             </div>
           </div>
@@ -1334,6 +1382,21 @@
       </header>
 
       <main class="vault-body">
+
+        <div id="folderManageBar" class="folder-manage-bar hidden">
+          <div class="min-w-0">
+            <div class="m3-eyebrow">Active Folder</div>
+            <div id="activeFolderLabel" class="text-sm font-semibold truncate">Folder</div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button id="insideRenameFolderBtn" type="button" class="secondary-btn" style="min-height:38px;padding:0 12px;font-size:12.5px;">
+              Rename
+            </button>
+            <button id="insideDeleteFolderBtn" type="button" class="danger-pill-btn">
+              Delete
+            </button>
+          </div>
+        </div>
 
         <button id="uploadBtn" type="button" class="upload-fab-btn">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
@@ -1362,7 +1425,7 @@
         </div>
 
         <div class="flex items-center justify-between mt-6 mb-3 px-0.5">
-          <h2 class="text-sm font-bold uppercase tracking-wider m3-muted">Gallery &amp; Folders</h2>
+          <h2 id="gallerySectionTitle" class="text-sm font-bold uppercase tracking-wider m3-muted">Gallery &amp; Folders</h2>
           <span class="text-xs m3-muted">Private</span>
         </div>
 
@@ -1386,7 +1449,7 @@
   </section>
 
 
-  <!-- 5. SETTINGS DIALOG (LOGOUT & DELETE ACCOUNT INSIDE SETTINGS) -->
+  <!-- 5. SETTINGS DIALOG -->
   <dialog id="settingsDialog">
     <div class="dialog-inner">
       <div class="flex items-center justify-between gap-3 mb-5">
@@ -1485,6 +1548,14 @@
           </svg>
         </button>
 
+        <button id="viewerMoveBtn" type="button" class="viewer-icon-btn" aria-label="Move media to folder" title="Move to folder">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+            <path d="M12 11v6"></path>
+            <path d="M9.5 14.5L12 17l2.5-2.5"></path>
+          </svg>
+        </button>
+
         <button id="viewerDeleteBtn" type="button" class="viewer-icon-btn danger-icon" aria-label="Delete media" title="Delete">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="3 6 5 6 21 6"></polyline>
@@ -1493,6 +1564,26 @@
             <path d="M14 11v6"></path>
           </svg>
         </button>
+      </div>
+    </div>
+  </dialog>
+
+
+  <!-- MOVE TO FOLDER MODAL -->
+  <dialog id="moveFolderDialog">
+    <div class="dialog-inner">
+      <div class="m3-eyebrow">Move Media</div>
+      <h2 class="dialog-title mt-1">Select destination folder</h2>
+      <p id="moveMediaFileName" class="m3-muted text-xs mt-1 truncate"></p>
+
+      <div class="mt-4">
+        <label for="moveFolderSelect" class="block text-xs font-medium m3-muted mb-1.5 ml-1">Destination</label>
+        <select id="moveFolderSelect" class="field"></select>
+      </div>
+
+      <div class="modal-actions">
+        <button id="moveFolderCancelBtn" type="button" class="secondary-btn">Cancel</button>
+        <button id="moveFolderConfirmBtn" type="button" class="primary-btn">Move here</button>
       </div>
     </div>
   </dialog>
