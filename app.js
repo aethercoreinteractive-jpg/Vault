@@ -23,7 +23,6 @@ let calculatorValue = "";
 let pinMode = "setup";
 let firstPin = "";
 let currentPinForChange = "";
-let snackbarTimer = null;
 
 const screens = [
   "authScreen",
@@ -31,154 +30,6 @@ const screens = [
   "calculatorScreen",
   "vaultScreen"
 ];
-
-/* ==========================================
-   INBUILT WEBSITE UI MODALS & SNACKBAR
-========================================== */
-
-function showSnackbar(message, durationMs = 3600) {
-  const bar = $("appSnackbar");
-  const text = $("appSnackbarText");
-  if (!bar || !text) return;
-
-  text.textContent = message;
-  bar.classList.remove("hidden");
-
-  if (snackbarTimer) clearTimeout(snackbarTimer);
-  snackbarTimer = setTimeout(() => {
-    bar.classList.add("hidden");
-  }, durationMs);
-}
-
-$("appSnackbarClose")?.addEventListener("click", () => {
-  if (snackbarTimer) clearTimeout(snackbarTimer);
-  $("appSnackbar")?.classList.add("hidden");
-});
-
-function openAppModal({
-  eyebrow = "Vault",
-  title = "",
-  description = "",
-  confirmText = "Confirm",
-  cancelText = "Cancel",
-  danger = false,
-  withInput = false,
-  defaultValue = "",
-  placeholder = ""
-}) {
-  return new Promise(resolve => {
-    const dialog = $("appModalDialog");
-    const eyebrowEl = $("appModalEyebrow");
-    const titleEl = $("appModalTitle");
-    const descEl = $("appModalDescription");
-    const inputWrap = $("appModalInputWrap");
-    const inputEl = $("appModalInput");
-    const cancelBtn = $("appModalCancelBtn");
-    const confirmBtn = $("appModalConfirmBtn");
-
-    eyebrowEl.textContent = eyebrow;
-    titleEl.textContent = title;
-    descEl.textContent = description;
-    descEl.classList.toggle("hidden", !description);
-
-    confirmBtn.textContent = confirmText;
-    cancelBtn.textContent = cancelText;
-    confirmBtn.classList.toggle("is-danger", Boolean(danger));
-
-    if (withInput) {
-      inputWrap.classList.remove("hidden");
-      inputEl.value = defaultValue;
-      inputEl.placeholder = placeholder;
-    } else {
-      inputWrap.classList.add("hidden");
-      inputEl.value = "";
-    }
-
-    let settled = false;
-    const finish = result => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      if (dialog.open) dialog.close();
-      resolve(result);
-    };
-
-    const onConfirm = () => {
-      if (withInput) {
-        finish(inputEl.value);
-      } else {
-        finish(true);
-      }
-    };
-
-    const onCancel = () => {
-      finish(withInput ? null : false);
-    };
-
-    const onKeyDown = e => {
-      if (e.key === "Enter" && withInput) {
-        e.preventDefault();
-        onConfirm();
-      }
-    };
-
-    const onBackdropClick = e => {
-      if (e.target === dialog) {
-        onCancel();
-      }
-    };
-
-    const onDialogClose = () => {
-      onCancel();
-    };
-
-    function cleanup() {
-      confirmBtn.removeEventListener("click", onConfirm);
-      cancelBtn.removeEventListener("click", onCancel);
-      inputEl.removeEventListener("keydown", onKeyDown);
-      dialog.removeEventListener("click", onBackdropClick);
-      dialog.removeEventListener("close", onDialogClose);
-    }
-
-    confirmBtn.addEventListener("click", onConfirm);
-    cancelBtn.addEventListener("click", onCancel);
-    inputEl.addEventListener("keydown", onKeyDown);
-    dialog.addEventListener("click", onBackdropClick);
-    dialog.addEventListener("close", onDialogClose);
-
-    dialog.showModal();
-
-    if (withInput) {
-      requestAnimationFrame(() => {
-        inputEl.focus();
-        inputEl.select();
-      });
-    }
-  });
-}
-
-function showConfirmModal({ eyebrow, title, description, confirmText = "Confirm", danger = false }) {
-  return openAppModal({
-    eyebrow,
-    title,
-    description,
-    confirmText,
-    danger,
-    withInput: false
-  });
-}
-
-function showPromptModal({ eyebrow, title, description = "", defaultValue = "", placeholder = "", confirmText = "Save" }) {
-  return openAppModal({
-    eyebrow,
-    title,
-    description,
-    confirmText,
-    withInput: true,
-    defaultValue,
-    placeholder
-  });
-}
 
 /* ==========================================
    GENERAL HELPERS
@@ -281,18 +132,6 @@ function populateSettingsAccountInfo() {
   if ($("settingsAccountId")) {
     $("settingsAccountId").textContent = user?.id ? `${user.id.slice(0, 8)}…` : "—";
   }
-}
-
-function resetClientSessionState() {
-  user = null;
-  currentFolder = null;
-  folderStack = [];
-  currentPinForChange = "";
-  firstPin = "";
-  calculatorValue = "";
-  if ($("fileList")) $("fileList").replaceChildren();
-  if ($("email")) $("email").value = "";
-  if ($("accountPassword")) $("accountPassword").value = "";
 }
 
 /* ==========================================
@@ -594,7 +433,8 @@ $("pinContinue").addEventListener("click", async () => {
 
       firstPin = "";
       showCalculator();
-      showSnackbar("PIN saved securely to your account.");
+
+      alert("PIN saved securely to your account.");
     }
   } catch (error) {
     showError("pinMessage", error);
@@ -724,13 +564,7 @@ $("backBtn").addEventListener("click", async () => {
 });
 
 $("addFolderBtn").addEventListener("click", async () => {
-  const name = await showPromptModal({
-    eyebrow: "New Folder",
-    title: "Create folder",
-    description: "Organize your private photos and videos inside a new folder.",
-    placeholder: "Folder name",
-    confirmText: "Create"
-  });
+  const name = prompt("Enter folder name:");
 
   if (!name || !name.trim()) return;
 
@@ -748,7 +582,6 @@ $("addFolderBtn").addEventListener("click", async () => {
     if (error) throw error;
 
     await loadVault();
-    showSnackbar(`Folder "${name.trim()}" created.`);
   } catch (error) {
     showError("vaultMessage", error);
   }
@@ -1041,7 +874,10 @@ $("fileInput").addEventListener("change", async event => {
         `${uploadedCount} uploaded. ${failedFiles.join(" | ")}`
       );
     } else {
-      showSnackbar(`${uploadedCount} file(s) uploaded successfully.`);
+      showMessage(
+        "vaultMessage",
+        `${uploadedCount} file(s) uploaded successfully.`
+      );
     }
   } catch (error) {
     showError("vaultMessage", error);
@@ -1102,26 +938,14 @@ $("closePreviewBtn").addEventListener("click", () => {
   $("previewContent").replaceChildren();
 });
 
-$("previewDialog")?.addEventListener("click", e => {
-  if (e.target === $("previewDialog")) {
-    $("closePreviewBtn").click();
-  }
-});
-
 /* ==========================================
    RENAME FILE
 ========================================== */
 
 async function renameFile(file) {
-  const newName = await showPromptModal({
-    eyebrow: "Rename File",
-    title: "Rename file",
-    defaultValue: file.file_name,
-    placeholder: "File name",
-    confirmText: "Rename"
-  });
+  const newName = prompt("Enter new file name:", file.file_name);
 
-  if (!newName || !newName.trim() || newName.trim() === file.file_name) return;
+  if (!newName || !newName.trim()) return;
 
   try {
     const { error } = await db
@@ -1133,7 +957,6 @@ async function renameFile(file) {
     if (error) throw error;
 
     await loadVault();
-    showSnackbar("File renamed.");
   } catch (error) {
     showError("vaultMessage", error);
   }
@@ -1144,15 +967,7 @@ async function renameFile(file) {
 ========================================== */
 
 async function deleteFile(file) {
-  const confirmed = await showConfirmModal({
-    eyebrow: "Permanent Action",
-    title: "Delete file?",
-    description: `"${file.file_name}" will be permanently removed from your vault.`,
-    confirmText: "Delete",
-    danger: true
-  });
-
-  if (!confirmed) return;
+  if (!confirm(`Delete ${file.file_name}?`)) return;
 
   try {
     const { error: storageError } = await db.storage
@@ -1170,7 +985,6 @@ async function deleteFile(file) {
     if (error) throw error;
 
     await loadVault();
-    showSnackbar("File deleted.");
   } catch (error) {
     showError("vaultMessage", error);
   }
@@ -1181,15 +995,9 @@ async function deleteFile(file) {
 ========================================== */
 
 async function renameFolder(folder) {
-  const name = await showPromptModal({
-    eyebrow: "Rename Folder",
-    title: "Rename folder",
-    defaultValue: folder.name,
-    placeholder: "Folder name",
-    confirmText: "Rename"
-  });
+  const name = prompt("Enter new folder name:", folder.name);
 
-  if (!name || !name.trim() || name.trim() === folder.name) return;
+  if (!name || !name.trim()) return;
 
   try {
     const { error } = await db
@@ -1201,7 +1009,6 @@ async function renameFolder(folder) {
     if (error) throw error;
 
     await loadVault();
-    showSnackbar("Folder renamed.");
   } catch (error) {
     showError("vaultMessage", error);
   }
@@ -1228,20 +1035,13 @@ async function deleteFolder(folder) {
     if (fileError) throw fileError;
 
     if (folderCount || fileCount) {
-      return showSnackbar(
+      return showMessage(
+        "vaultMessage",
         "This folder is not empty. Delete or move its contents first."
       );
     }
 
-    const confirmed = await showConfirmModal({
-      eyebrow: "Permanent Action",
-      title: "Delete folder?",
-      description: `Are you sure you want to delete "${folder.name}"?`,
-      confirmText: "Delete",
-      danger: true
-    });
-
-    if (!confirmed) return;
+    if (!confirm(`Delete folder ${folder.name}?`)) return;
 
     const { error } = await db
       .from("vault_folders")
@@ -1252,14 +1052,13 @@ async function deleteFolder(folder) {
     if (error) throw error;
 
     await loadVault();
-    showSnackbar("Folder deleted.");
   } catch (error) {
     showError("vaultMessage", error);
   }
 }
 
 /* ==========================================
-   SETTINGS, SIGN OUT & DELETE ACCOUNT
+   SETTINGS
 ========================================== */
 
 $("settingsBtn").addEventListener("click", () => {
@@ -1271,12 +1070,6 @@ $("closeSettingsBtn").addEventListener("click", () => {
   $("settingsDialog").close();
 });
 
-$("settingsDialog")?.addEventListener("click", e => {
-  if (e.target === $("settingsDialog")) {
-    $("settingsDialog").close();
-  }
-});
-
 $("changePinBtn").addEventListener("click", () => {
   $("settingsDialog").close();
   currentPinForChange = "";
@@ -1284,24 +1077,19 @@ $("changePinBtn").addEventListener("click", () => {
 });
 
 async function handleSignOut() {
-  if ($("settingsDialog")?.open) $("settingsDialog").close();
-
-  const confirmed = await showConfirmModal({
-    eyebrow: "Account Session",
-    title: "Sign out?",
-    description: "You will need to sign back in with your email and password to access your vault.",
-    confirmText: "Sign out",
-    danger: true
-  });
-
-  if (!confirmed) return;
+  if (!confirm("Sign out of your account?")) return;
 
   try {
     const { error } = await db.auth.signOut();
 
     if (error) throw error;
 
-    resetClientSessionState();
+    user = null;
+    currentPinForChange = "";
+    firstPin = "";
+    calculatorValue = "";
+
+    if ($("settingsDialog")?.open) $("settingsDialog").close();
     showScreen("authScreen");
     showMessage("authMessage", "You have signed out.");
   } catch (error) {
@@ -1309,131 +1097,8 @@ async function handleSignOut() {
   }
 }
 
-async function handleDeleteAccount() {
-  if ($("settingsDialog")?.open) $("settingsDialog").close();
-
-  const confirmed = await showConfirmModal({
-    eyebrow: "Permanent Account Deletion",
-    title: "Delete your account?",
-    description: "This will permanently delete all your stored files, folders, PIN settings, and vault data. This action cannot be undone.",
-    confirmText: "Delete everything",
-    danger: true
-  });
-
-  if (!confirmed) return;
-
-  try {
-    requireUser();
-    const targetUserId = user.id;
-
-    showSnackbar("Deleting all files, folders, and account data...", 8000);
-
-    // 1. Fetch all file records for this user to purge storage objects
-    const { data: userFiles, error: fetchFilesError } = await db
-      .from("vault_files")
-      .select("id, object_path")
-      .eq("user_id", targetUserId);
-
-    if (fetchFilesError) throw fetchFilesError;
-
-    // 2. Remove every file from Supabase Storage ("vault-files")
-    const pathsToRemove = (userFiles || [])
-      .map(f => f.object_path)
-      .filter(Boolean);
-
-    if (pathsToRemove.length > 0) {
-      const { error: storageRemoveError } = await db.storage
-        .from(BUCKET)
-        .remove(pathsToRemove);
-
-      if (storageRemoveError) throw storageRemoveError;
-    }
-
-    // Also list any orphaned objects under userId/ folder in storage
-    const { data: listedObjects } = await db.storage
-      .from(BUCKET)
-      .list(targetUserId, { limit: 1000 });
-
-    if (listedObjects && listedObjects.length > 0) {
-      const orphanPaths = listedObjects
-        .filter(obj => obj.name)
-        .map(obj => `${targetUserId}/${obj.name}`);
-      if (orphanPaths.length > 0) {
-        await db.storage.from(BUCKET).remove(orphanPaths);
-      }
-    }
-
-    // 3. Delete all file rows in "vault_files"
-    const { error: deleteFilesError } = await db
-      .from("vault_files")
-      .delete()
-      .eq("user_id", targetUserId);
-
-    if (deleteFilesError) throw deleteFilesError;
-
-    // 4. Delete all folder rows in "vault_folders" (child folders first, then root)
-    let remainingFolders = true;
-    let safetyPasses = 0;
-    while (remainingFolders && safetyPasses < 20) {
-      safetyPasses++;
-      const { data: foldersLeft } = await db
-        .from("vault_folders")
-        .select("id, parent_id")
-        .eq("user_id", targetUserId);
-
-      if (!foldersLeft || foldersLeft.length === 0) {
-        remainingFolders = false;
-        break;
-      }
-
-      const parentIds = new Set(
-        foldersLeft.map(f => f.parent_id).filter(Boolean)
-      );
-      const leafIds = foldersLeft
-        .filter(f => !parentIds.has(f.id))
-        .map(f => f.id);
-
-      const idsToDelete = leafIds.length > 0
-        ? leafIds
-        : foldersLeft.map(f => f.id);
-
-      const { error: delFolderErr } = await db
-        .from("vault_folders")
-        .delete()
-        .in("id", idsToDelete)
-        .eq("user_id", targetUserId);
-
-      if (delFolderErr) throw delFolderErr;
-    }
-
-    // 5. Attempt cloud PIN cleanup via Edge Function if supported
-    try {
-      await callPinFunction({ action: "delete" });
-    } catch (_) {
-      // Ignore if Edge Function only exposes status/setup/verify/change
-    }
-
-    // 6. Attempt auth user deletion RPC if configured on Supabase
-    try {
-      await db.rpc("delete_user");
-    } catch (_) {
-      // Proceed to sign out even if RPC is not deployed
-    }
-
-    // 7. Sign out and return to Sign In screen
-    await db.auth.signOut();
-    resetClientSessionState();
-    showScreen("authScreen");
-    showMessage("authMessage", "Your account data and files have been permanently deleted.");
-    showSnackbar("Account and all vault data deleted.");
-  } catch (error) {
-    showError("vaultMessage", error);
-    showSnackbar(error?.message || "Failed to delete account data.");
-  }
-}
-
 $("signOutBtn").addEventListener("click", handleSignOut);
-$("deleteAccountBtn").addEventListener("click", handleDeleteAccount);
+$("settingsSignOutBtn").addEventListener("click", handleSignOut);
 
 /* ==========================================
    APP STARTUP
