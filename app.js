@@ -681,6 +681,40 @@ $("addFolderBtn").addEventListener("click", async () => {
    LOAD FOLDERS AND MEDIA CARDS
 ========================================== */
 
+function detectMediaKind(file) {
+  const lowerName = (file.file_name || "").toLowerCase();
+  const lowerPath = (file.object_path || "").toLowerCase();
+  const mime = (file.mime_type || "").toLowerCase();
+
+  const isVideo =
+    mime.startsWith("video/") ||
+    /\.(mp4|webm|mov|m4v|mkv|avi|3gp)$/.test(lowerName) ||
+    /\.(mp4|webm|mov|m4v|mkv|avi|3gp)$/.test(lowerPath);
+
+  if (isVideo) return "video";
+
+  const isImage =
+    mime.startsWith("image/") ||
+    /\.(jpg|jpeg|png|gif|webp|bmp|svg|avif|heic|heif)$/.test(lowerName) ||
+    /\.(jpg|jpeg|png|gif|webp|bmp|svg|avif|heic|heif)$/.test(lowerPath);
+
+  if (isImage) return "image";
+
+  return "image";
+}
+
+async function getCardMediaUrl(objectPath) {
+  if (!objectPath) return "";
+  const { data, error } = await db.storage
+    .from(BUCKET)
+    .createSignedUrl(objectPath, 3600);
+
+  if (error) {
+    throw error;
+  }
+  return data?.signedUrl || "";
+}
+
 async function loadVault() {
   try {
     requireUser();
@@ -763,98 +797,21 @@ async function loadVault() {
       list.append(item);
     });
 
-    const signedUrlMap = new Map();
-    const validPaths = fileItems.map(f => f.object_path).filter(Boolean);
+    for (let index = 0; index < fileItems.length; index++) {
+      const file = fileItems[index];
+      const kind = detectMediaKind(file);
+      const isVideo = kind === "video";
 
-    if (validPaths.length > 0) {
-      const { data: signedList, error: batchErr } = await db.storage
-        .from(BUCKET)
-        .createSignedUrls(validPaths, 3600);
-
-      if (!batchErr && Array.isArray(signedList)) {
-        signedList.forEach(entry => {
-          if (entry?.path && entry?.signedUrl) {
-            signedUrlMap.set(entry.path, entry.signedUrl);
-          }
-        });
-      }
-    }
-
-    fileItems.forEach((file, index) => {
       const card = document.createElement("div");
       card.className = "media-card";
       card.setAttribute("role", "button");
       card.setAttribute("tabindex", "0");
       card.setAttribute("aria-label", file.file_name);
 
-      const lowerName = (file.file_name || "").toLowerCase();
-      const mime = (file.mime_type || "").toLowerCase();
-      const isVideo =
-        mime.startsWith("video/") ||
-        /\.(mp4|webm|mov|m4v|mkv|avi|3gp)$/.test(lowerName);
-      const isImage =
-        !isVideo &&
-        (mime.startsWith("image/") ||
-          /\.(jpg|jpeg|png|gif|webp|bmp|svg|avif|heic)$/.test(lowerName));
-
       const fallback = document.createElement("span");
       fallback.className = "gallery-placeholder";
       fallback.textContent = isVideo ? "🎬" : "🖼️";
       card.append(fallback);
-
-      const attachMediaUrl = signedUrl => {
-        if (!signedUrl || !card.isConnected) return;
-
-        if (isImage) {
-          const img = document.createElement("img");
-          img.className = "gallery-media hidden";
-          img.alt = file.file_name;
-          img.decoding = "async";
-          img.onload = () => {
-            fallback.remove();
-            img.classList.remove("hidden");
-          };
-          img.onerror = () => {
-            img.remove();
-          };
-          card.prepend(img);
-          img.src = signedUrl;
-        } else if (isVideo) {
-          const vid = document.createElement("video");
-          vid.className = "gallery-media hidden";
-          vid.muted = true;
-          vid.playsInline = true;
-          vid.preload = "metadata";
-          const showFrame = () => {
-            fallback.remove();
-            vid.classList.remove("hidden");
-          };
-          vid.onloadedmetadata = showFrame;
-          vid.onloadeddata = showFrame;
-          vid.onerror = () => {
-            vid.remove();
-          };
-          card.prepend(vid);
-          vid.src = `${signedUrl}#t=0.1`;
-        }
-      };
-
-      if (file.object_path) {
-        const cachedUrl = signedUrlMap.get(file.object_path);
-        if (cachedUrl) {
-          attachMediaUrl(cachedUrl);
-        } else {
-          db.storage
-            .from(BUCKET)
-            .createSignedUrl(file.object_path, 3600)
-            .then(({ data, error }) => {
-              if (!error && data?.signedUrl) {
-                attachMediaUrl(data.signedUrl);
-              }
-            })
-            .catch(() => {});
-        }
-      }
 
       if (isVideo) {
         const badge = document.createElement("span");
@@ -872,7 +829,40 @@ async function loadVault() {
       });
 
       list.append(card);
-    });
+
+      try {
+        const signedUrl = await getCardMediaUrl(file.object_path);
+        if (!signedUrl || !card.isConnected) continue;
+
+        if (isVideo) {
+          const vid = document.createElement("video");
+          vid.className = "gallery-media";
+          vid.muted = true;
+          vid.playsInline = true;
+          vid.preload = "metadata";
+          vid.onloadedmetadata = () => fallback.remove();
+          vid.onloadeddata = () => fallback.remove();
+          vid.onerror = () => vid.remove();
+          vid.src = `${signedUrl}#t=0.1`;
+          card.prepend(vid);
+        } else {
+          const img = document.createElement("img");
+          img.className = "gallery-media";
+          img.alt = file.file_name;
+          img.decoding = "async";
+          img.onload = () => fallback.remove();
+          img.onerror = () => {
+            img.remove();
+            showMessage("vaultMessage", `Could not load image "${file.file_name}".`);
+          };
+          img.src = signedUrl;
+          card.prepend(img);
+        }
+      } catch (thumbErr) {
+        console.error("Card media load error:", thumbErr);
+        showMessage("vaultMessage", thumbErr?.message || "Failed to load media preview.");
+      }
+    }
 
     if (!folderItems.length && !fileItems.length) {
       const empty = document.createElement("div");
@@ -1025,8 +1015,9 @@ async function renderViewerSlide(index) {
     if (error) throw error;
     if (activeViewerIndex !== index || !$("previewDialog")?.open) return;
 
+    const kind = detectMediaKind(file);
     const media = document.createElement(
-      file.mime_type?.startsWith("video/") ? "video" : "img"
+      kind === "video" ? "video" : "img"
     );
     media.src = data.signedUrl;
 
