@@ -1,9 +1,0 @@
-
-{
-  "appId": "com.calculatorvault.app",
-  "appName": "Calculator",
-  "webDir": "dist",
-  "server": {
-    "androidScheme": "https"
-  }
-}
