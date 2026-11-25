@@ -1,0 +1,12 @@
+
+{
+  "name": "Calculator Vault",
+  "short_name": "Calculator",
+  "description": "Calculator and private file storage",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#171717",
+  "theme_color": "#171717"
+}
