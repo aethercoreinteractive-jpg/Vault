@@ -17,7 +17,10 @@ const $ = id => document.getElementById(id);
 
 let user = null;
 let currentFolder = null;
+let currentFolderObj = null;
 let folderStack = [];
+let allFoldersCache = [];
+let allFilesCache = [];
 let currentFolderMedia = [];
 let activeViewerIndex = -1;
 
@@ -26,6 +29,8 @@ let pinMode = "setup";
 let firstPin = "";
 let currentPinForChange = "";
 let snackbarTimer = null;
+let activeScreenId = "authScreen";
+let handlingPopState = false;
 
 const screens = [
   "authScreen",
@@ -33,6 +38,84 @@ const screens = [
   "calculatorScreen",
   "vaultScreen"
 ];
+
+/* ==========================================
+   NATIVE BACK BUTTON / HISTORY NAVIGATION
+========================================== */
+
+function syncHistoryStack() {
+  if (handlingPopState) return;
+
+  const state = {
+    screen: activeScreenId,
+    folderId: currentFolder,
+    folderDepth: folderStack.length,
+    viewerOpen: Boolean($("previewDialog")?.open),
+    viewerIndex: activeViewerIndex
+  };
+
+  try {
+    history.pushState(state, "", window.location.href);
+  } catch (_) {}
+}
+
+window.addEventListener("popstate", async () => {
+  handlingPopState = true;
+  try {
+    if ($("moveFolderDialog")?.open) {
+      $("moveFolderDialog").close();
+      return;
+    }
+
+    if ($("appModalDialog")?.open) {
+      $("appModalDialog").close();
+      return;
+    }
+
+    if ($("settingsDialog")?.open) {
+      $("settingsDialog").close();
+      return;
+    }
+
+    if ($("previewDialog")?.open) {
+      pauseActiveViewerVideo();
+      activeViewerIndex = -1;
+      $("previewDialog").close();
+      $("viewerSlide")?.replaceChildren();
+      return;
+    }
+
+    if (activeScreenId === "vaultScreen") {
+      if (folderStack.length > 0) {
+        currentFolder = folderStack.pop();
+        await loadVault();
+        return;
+      }
+      if (currentFolder !== null) {
+        currentFolder = null;
+        await loadVault();
+        return;
+      }
+      showCalculator();
+      return;
+    }
+
+    if (activeScreenId === "pinScreen") {
+      showCalculator();
+      return;
+    }
+
+    if (activeScreenId === "calculatorScreen") {
+      try {
+        history.pushState({ screen: "calculatorScreen" }, "", window.location.href);
+      } catch (_) {}
+      showSnackbar("Press AC to clear or enter your PIN.");
+      return;
+    }
+  } finally {
+    handlingPopState = false;
+  }
+});
 
 /* ==========================================
    MULTI-BILLION DOLLAR LAUNCH OVERLAY
@@ -209,6 +292,109 @@ function showPromptModal({ eyebrow, title, description = "", defaultValue = "", 
   });
 }
 
+function openMoveFolderModal(file, folders, currentFolderId) {
+  return new Promise(resolve => {
+    const dialog = $("moveFolderDialog");
+    const fileLabel = $("moveMediaFileName");
+    const selectEl = $("moveFolderSelect");
+    const cancelBtn = $("moveFolderCancelBtn");
+    const confirmBtn = $("moveFolderConfirmBtn");
+
+    if (!dialog || !selectEl) {
+      resolve(null);
+      return;
+    }
+
+    if (fileLabel) {
+      fileLabel.textContent = `File: ${file.file_name}`;
+    }
+
+    selectEl.replaceChildren();
+
+    const rootOption = document.createElement("option");
+    rootOption.value = "__ROOT__";
+    rootOption.textContent = "My files (Root)";
+    if (currentFolderId === null) {
+      rootOption.disabled = true;
+      rootOption.textContent += " (Current)";
+    }
+    selectEl.append(rootOption);
+
+    const buildDepthMap = list => {
+      const byId = new Map(list.map(f => [f.id, f]));
+      return folder => {
+        const parts = [folder.name];
+        let parentId = folder.parent_id;
+        const seen = new Set([folder.id]);
+        while (parentId && !seen.has(parentId)) {
+          seen.add(parentId);
+          const parent = byId.get(parentId);
+          if (!parent) break;
+          parts.unshift(parent.name);
+          parentId = parent.parent_id;
+        }
+        return parts.join(" / ");
+      };
+    };
+
+    const getFolderPath = buildDepthMap(folders || []);
+
+    (folders || []).forEach(folder => {
+      const opt = document.createElement("option");
+      opt.value = folder.id;
+      opt.textContent = getFolderPath(folder);
+      if (folder.id === currentFolderId) {
+        opt.disabled = true;
+        opt.textContent += " (Current)";
+      }
+      selectEl.append(opt);
+    });
+
+    const firstEnabled = [...selectEl.options].find(o => !o.disabled);
+    if (firstEnabled) {
+      selectEl.value = firstEnabled.value;
+      confirmBtn.disabled = false;
+    } else {
+      confirmBtn.disabled = true;
+    }
+
+    let settled = false;
+    const finish = val => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (dialog.open) dialog.close();
+      resolve(val);
+    };
+
+    const onConfirm = () => {
+      const chosen = selectEl.value;
+      if (!chosen) return finish(null);
+      finish(chosen === "__ROOT__" ? null : chosen);
+    };
+
+    const onCancel = () => finish(null);
+    const onBackdropClick = e => {
+      if (e.target === dialog) onCancel();
+    };
+    const onClose = () => onCancel();
+
+    function cleanup() {
+      confirmBtn.removeEventListener("click", onConfirm);
+      cancelBtn.removeEventListener("click", onCancel);
+      dialog.removeEventListener("click", onBackdropClick);
+      dialog.removeEventListener("close", onClose);
+    }
+
+    confirmBtn.addEventListener("click", onConfirm);
+    cancelBtn.addEventListener("click", onCancel);
+    dialog.addEventListener("click", onBackdropClick);
+    dialog.addEventListener("close", onClose);
+
+    dialog.showModal();
+  });
+}
+
 /* ==========================================
    GENERAL HELPERS
 ========================================== */
@@ -220,6 +406,8 @@ function showScreen(id) {
   });
 
   if ($(id)) $(id).classList.remove("hidden");
+  activeScreenId = id;
+  syncHistoryStack();
 }
 
 function showMessage(id, message) {
@@ -288,7 +476,10 @@ function populateSettingsAccountInfo() {
 function resetClientSessionState() {
   user = null;
   currentFolder = null;
+  currentFolderObj = null;
   folderStack = [];
+  allFoldersCache = [];
+  allFilesCache = [];
   currentFolderMedia = [];
   activeViewerIndex = -1;
   currentPinForChange = "";
@@ -647,6 +838,7 @@ async function unlockVault(pin) {
     setLaunchOverlay(true, 45, "PIN verified. Preparing vault & card previews...", "Preparing Vault");
 
     currentFolder = null;
+    currentFolderObj = null;
     folderStack = [];
     populateSettingsAccountInfo();
 
@@ -671,12 +863,24 @@ async function unlockVault(pin) {
 }
 
 /* ==========================================
-   FOLDER NAVIGATION
+   FOLDER NAVIGATION & FULL-SCREEN MODE
 ========================================== */
+
+async function enterFolder(folderId) {
+  folderStack.push(currentFolder);
+  currentFolder = folderId;
+  syncHistoryStack();
+  await loadVault();
+}
 
 $("backBtn").addEventListener("click", async () => {
   if (folderStack.length > 0) {
     currentFolder = folderStack.pop();
+    syncHistoryStack();
+    await loadVault();
+  } else if (currentFolder !== null) {
+    currentFolder = null;
+    syncHistoryStack();
     await loadVault();
   } else {
     showCalculator();
@@ -714,6 +918,20 @@ $("addFolderBtn").addEventListener("click", async () => {
   }
 });
 
+$("insideRenameFolderBtn")?.addEventListener("click", async () => {
+  if (!currentFolderObj) return;
+  await renameFolder(currentFolderObj);
+});
+
+$("insideDeleteFolderBtn")?.addEventListener("click", async () => {
+  if (!currentFolderObj) return;
+  const deleted = await deleteFolder(currentFolderObj);
+  if (deleted) {
+    currentFolder = folderStack.length > 0 ? folderStack.pop() : null;
+    await loadVault();
+  }
+});
+
 /* ==========================================
    LOAD FOLDERS AND VERIFIED MEDIA CARDS
 ========================================== */
@@ -738,6 +956,26 @@ function detectMediaKind(file) {
   if (isImage) return "image";
 
   return "image";
+}
+
+function findLatestVideoInFolderTree(targetFolderId, allFolders, allFiles) {
+  const folderIds = new Set([targetFolderId]);
+  let added = true;
+  while (added) {
+    added = false;
+    for (const f of allFolders || []) {
+      if (f.parent_id && folderIds.has(f.parent_id) && !folderIds.has(f.id)) {
+        folderIds.add(f.id);
+        added = true;
+      }
+    }
+  }
+
+  const videos = (allFiles || []).filter(
+    file => file.folder_id && folderIds.has(file.folder_id) && detectMediaKind(file) === "video"
+  );
+
+  return videos.length > 0 ? videos[0] : null;
 }
 
 function loadAndDecodeImage(url, altText) {
@@ -774,10 +1012,10 @@ function loadAndDecodeImage(url, altText) {
   });
 }
 
-function loadVideoFrame(url) {
+function loadVideoFrame(url, className = "gallery-media") {
   return new Promise((resolve, reject) => {
     const vid = document.createElement("video");
-    vid.className = "gallery-media";
+    vid.className = className;
     vid.muted = true;
     vid.playsInline = true;
     vid.preload = "metadata";
@@ -820,6 +1058,45 @@ async function getSignedUrlForFile(file) {
   return data.signedUrl;
 }
 
+function updateFolderModeUI(folders) {
+  const wrapper = $("vaultWrapper");
+  const manageBar = $("folderManageBar");
+  const activeLabel = $("activeFolderLabel");
+  const screenTitle = $("vaultScreenTitle");
+  const folderPath = $("folderPath");
+  const addFolderBtn = $("addFolderBtn");
+  const sectionTitle = $("gallerySectionTitle");
+
+  currentFolderObj = currentFolder
+    ? (folders || []).find(f => f.id === currentFolder) || null
+    : null;
+
+  const insideFolder = Boolean(currentFolder && currentFolderObj);
+
+  if (wrapper) {
+    wrapper.classList.toggle("is-folder-fullscreen", insideFolder);
+  }
+
+  if (manageBar) {
+    manageBar.classList.toggle("hidden", !insideFolder);
+  }
+
+  if (addFolderBtn) {
+    addFolderBtn.classList.toggle("hidden", insideFolder);
+  }
+
+  if (insideFolder) {
+    if (screenTitle) screenTitle.textContent = currentFolderObj.name;
+    if (folderPath) folderPath.textContent = "Full-screen folder view";
+    if (activeLabel) activeLabel.textContent = currentFolderObj.name;
+    if (sectionTitle) sectionTitle.textContent = "Folder Contents";
+  } else {
+    if (screenTitle) screenTitle.textContent = "My Vault";
+    if (folderPath) folderPath.textContent = "My files";
+    if (sectionTitle) sectionTitle.textContent = "Gallery & Folders";
+  }
+}
+
 async function loadVault(options = {}) {
   const { onProgress = null, requireAllCardsReady = false } = options;
 
@@ -845,68 +1122,80 @@ async function loadVault(options = {}) {
 
     if (fileError) throw fileError;
 
-    const folderItems = (folders || []).filter(
+    allFoldersCache = folders || [];
+    allFilesCache = files || [];
+
+    updateFolderModeUI(allFoldersCache);
+
+    const folderItems = allFoldersCache.filter(
       folder => folder.parent_id === currentFolder
     );
 
-    const fileItems = (files || []).filter(
+    const fileItems = allFilesCache.filter(
       file => file.folder_id === currentFolder
     );
 
     currentFolderMedia = fileItems;
 
-    $("folderPath").textContent =
-      currentFolder ? "Inside folder" : "My files";
-
     const list = $("fileList");
     const fragment = document.createDocumentFragment();
+    const failedCards = [];
 
-    folderItems.forEach(folder => {
+    for (let fIdx = 0; fIdx < folderItems.length; fIdx++) {
+      const folder = folderItems[fIdx];
       const item = document.createElement("div");
       item.className = "folder-card";
+      item.setAttribute("role", "button");
+      item.setAttribute("tabindex", "0");
+      item.setAttribute("aria-label", folder.name);
 
       const thumb = document.createElement("div");
       thumb.className = "folder-thumb";
-      thumb.textContent = "📁";
-      thumb.addEventListener("click", async () => {
-        folderStack.push(currentFolder);
-        currentFolder = folder.id;
-        await loadVault();
-      });
+
+      const latestVideo = findLatestVideoInFolderTree(folder.id, allFoldersCache, allFilesCache);
+
+      if (latestVideo) {
+        try {
+          const vidUrl = await getSignedUrlForFile(latestVideo);
+          const vidEl = await loadVideoFrame(vidUrl, "folder-video-thumb");
+          thumb.append(vidEl);
+
+          const tag = document.createElement("span");
+          tag.className = "folder-video-tag";
+          tag.textContent = "▶";
+          thumb.append(tag);
+        } catch (vidErr) {
+          console.error("Folder video thumbnail error:", vidErr);
+          thumb.textContent = "📁";
+          if (requireAllCardsReady) {
+            failedCards.push(`${folder.name}: ${vidErr?.message || "Video preview failed"}`);
+          }
+        }
+      } else {
+        thumb.textContent = "📁";
+      }
 
       const title = document.createElement("div");
       title.className = "folder-title";
       title.textContent = folder.name;
 
-      const actions = document.createElement("div");
-      actions.className = "folder-actions";
+      const openFolderAction = async () => {
+        await enterFolder(folder.id);
+      };
 
-      const open = document.createElement("button");
-      open.type = "button";
-      open.textContent = "Open";
-      open.addEventListener("click", async () => {
-        folderStack.push(currentFolder);
-        currentFolder = folder.id;
-        await loadVault();
+      item.addEventListener("click", openFolderAction);
+      item.addEventListener("keydown", async e => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          await openFolderAction();
+        }
       });
 
-      const rename = document.createElement("button");
-      rename.type = "button";
-      rename.textContent = "Rename";
-      rename.addEventListener("click", () => renameFolder(folder));
-
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.textContent = "Delete";
-      remove.addEventListener("click", () => deleteFolder(folder));
-
-      actions.append(open, rename, remove);
-      item.append(thumb, title, actions);
+      item.append(thumb, title);
       fragment.append(item);
-    });
+    }
 
     const totalMedia = fileItems.length;
-    const failedCards = [];
 
     for (let index = 0; index < totalMedia; index++) {
       const file = fileItems[index];
@@ -947,7 +1236,7 @@ async function loadVault(options = {}) {
       try {
         const signedUrl = await getSignedUrlForFile(file);
         const mediaEl = isVideo
-          ? await loadVideoFrame(signedUrl)
+          ? await loadVideoFrame(signedUrl, "gallery-media")
           : await loadAndDecodeImage(signedUrl, file.file_name);
 
         fallback.remove();
@@ -1147,6 +1436,7 @@ async function openViewerAtIndex(index) {
   const dialog = $("previewDialog");
   if (!dialog.open) {
     dialog.showModal();
+    syncHistoryStack();
   }
   await renderViewerSlide(activeViewerIndex);
 }
@@ -1257,6 +1547,12 @@ $("viewerRenameBtn").addEventListener("click", async () => {
   await renameFile(file, true);
 });
 
+$("viewerMoveBtn")?.addEventListener("click", async () => {
+  const file = currentFolderMedia[activeViewerIndex];
+  if (!file) return;
+  await moveFileToFolder(file);
+});
+
 $("viewerDeleteBtn").addEventListener("click", async () => {
   const file = currentFolderMedia[activeViewerIndex];
   if (!file) return;
@@ -1264,8 +1560,38 @@ $("viewerDeleteBtn").addEventListener("click", async () => {
 });
 
 /* ==========================================
-   RENAME & DELETE FILE
+   MOVE, RENAME & DELETE FILE
 ========================================== */
+
+async function moveFileToFolder(file) {
+  const targetFolderId = await openMoveFolderModal(file, allFoldersCache, currentFolder);
+  if (targetFolderId === undefined) return;
+  if (targetFolderId === currentFolder) return;
+
+  try {
+    const { error } = await db
+      .from("vault_files")
+      .update({ folder_id: targetFolderId })
+      .eq("id", file.id)
+      .eq("user_id", user.id);
+
+    if (error) throw error;
+
+    await loadVault();
+
+    if (currentFolderMedia.length === 0) {
+      $("closePreviewBtn").click();
+    } else {
+      const nextIdx = Math.min(activeViewerIndex, currentFolderMedia.length - 1);
+      await openViewerAtIndex(nextIdx);
+    }
+
+    const destFolder = allFoldersCache.find(f => f.id === targetFolderId);
+    showSnackbar(`Moved "${file.file_name}" to ${destFolder ? destFolder.name : "My files"}.`);
+  } catch (error) {
+    showError("vaultMessage", error);
+  }
+}
 
 async function renameFile(file, keepViewerOpen = false) {
   const newName = await showPromptModal({
@@ -1388,9 +1714,10 @@ async function deleteFolder(folder) {
     if (fileError) throw fileError;
 
     if (folderCount || fileCount) {
-      return showSnackbar(
+      showSnackbar(
         "This folder is not empty. Delete or move its contents first."
       );
+      return false;
     }
 
     const confirmed = await showConfirmModal({
@@ -1401,7 +1728,7 @@ async function deleteFolder(folder) {
       danger: true
     });
 
-    if (!confirmed) return;
+    if (!confirmed) return false;
 
     const { error } = await db
       .from("vault_folders")
@@ -1413,8 +1740,10 @@ async function deleteFolder(folder) {
 
     await loadVault();
     showSnackbar("Folder deleted.");
+    return true;
   } catch (error) {
     showError("vaultMessage", error);
+    return false;
   }
 }
 
@@ -1588,6 +1917,10 @@ $("deleteAccountBtn").addEventListener("click", handleDeleteAccount);
 
 async function startApp() {
   try {
+    try {
+      history.replaceState({ screen: "authScreen" }, "", window.location.href);
+    } catch (_) {}
+
     const { data, error } = await db.auth.getSession();
     if (error) throw error;
 
