@@ -678,7 +678,7 @@ $("addFolderBtn").addEventListener("click", async () => {
 });
 
 /* ==========================================
-   LOAD FOLDERS AND GALLERY MEDIA
+   LOAD FOLDERS AND MEDIA CARDS
 ========================================== */
 
 async function loadVault() {
@@ -764,11 +764,11 @@ async function loadVault() {
     });
 
     fileItems.forEach((file, index) => {
-      const tile = document.createElement("div");
-      tile.className = "gallery-tile";
-      tile.setAttribute("role", "button");
-      tile.setAttribute("tabindex", "0");
-      tile.setAttribute("aria-label", file.file_name);
+      const card = document.createElement("div");
+      card.className = "media-card";
+      card.setAttribute("role", "button");
+      card.setAttribute("tabindex", "0");
+      card.setAttribute("aria-label", file.file_name);
 
       const isVideo = file.mime_type?.startsWith("video/");
       const isImage = file.mime_type?.startsWith("image/");
@@ -776,14 +776,14 @@ async function loadVault() {
       const fallback = document.createElement("span");
       fallback.className = "gallery-placeholder";
       fallback.textContent = isVideo ? "🎬" : "🖼️";
-      tile.append(fallback);
+      card.append(fallback);
 
       if (file.object_path) {
         db.storage
           .from(BUCKET)
           .createSignedUrl(file.object_path, 300)
           .then(({ data, error }) => {
-            if (!error && data?.signedUrl && tile.isConnected) {
+            if (!error && data?.signedUrl && card.isConnected) {
               if (isImage) {
                 const img = document.createElement("img");
                 img.className = "gallery-media";
@@ -791,7 +791,7 @@ async function loadVault() {
                 img.loading = "lazy";
                 img.onload = () => {
                   fallback.remove();
-                  tile.prepend(img);
+                  card.prepend(img);
                 };
                 img.src = data.signedUrl;
               } else if (isVideo) {
@@ -802,7 +802,7 @@ async function loadVault() {
                 vid.preload = "metadata";
                 vid.onloadeddata = () => {
                   fallback.remove();
-                  tile.prepend(vid);
+                  card.prepend(vid);
                 };
                 vid.src = data.signedUrl;
               }
@@ -815,18 +815,18 @@ async function loadVault() {
         const badge = document.createElement("span");
         badge.className = "gallery-video-pill";
         badge.textContent = "▶";
-        tile.append(badge);
+        card.append(badge);
       }
 
-      tile.addEventListener("click", () => openViewerAtIndex(index));
-      tile.addEventListener("keydown", e => {
+      card.addEventListener("click", () => openViewerAtIndex(index));
+      card.addEventListener("keydown", e => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           openViewerAtIndex(index);
         }
       });
 
-      list.append(tile);
+      list.append(card);
     });
 
     if (!folderItems.length && !fileItems.length) {
