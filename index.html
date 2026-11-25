@@ -4,12 +4,110 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-  <meta name="theme-color" content="#171717">
+  <meta name="theme-color" content="#111318">
   <title>Calculator</title>
-  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="app"></div>
-  <script type="module" src="/src/main.js"></script>
+
+  <main id="authScreen" class="screen hidden">
+    <div class="auth-card">
+      <h1>Calculator Vault</h1>
+      <p>Secure cloud account</p>
+      <input id="email" type="email" placeholder="Email address">
+      <input id="accountPassword" type="password" placeholder="Account password">
+      <button id="signupBtn">Create account</button>
+      <button id="loginBtn" class="secondary">Sign in</button>
+      <p id="authMessage" class="message"></p>
+    </div>
+  </main>
+
+  <main id="pinScreen" class="screen hidden">
+    <div class="auth-card">
+      <h1 id="pinTitle">Create your PIN</h1>
+      <p id="pinDescription">Choose a private calculator PIN</p>
+      <input id="pinInput" type="password" inputmode="numeric"
+             maxlength="8" placeholder="Enter PIN">
+      <button id="pinContinue">Continue</button>
+      <p id="pinMessage" class="message"></p>
+    </div>
+  </main>
+
+  <main id="calculatorScreen" class="screen hidden">
+    <div class="calculator">
+      <div class="calc-top">
+        <span>CALCULATOR</span>
+        <button id="settingsBtn" aria-label="Settings">⚙</button>
+      </div>
+
+      <div id="expression" class="expression"></div>
+      <div id="display" class="display">0</div>
+
+      <div class="keypad">
+        <button class="key function" data-action="clear">AC</button>
+        <button class="key function" data-action="delete">DEL</button>
+        <button class="key function" data-value="%">%</button>
+        <button class="key operator" data-value="/">÷</button>
+
+        <button class="key" data-value="7">7</button>
+        <button class="key" data-value="8">8</button>
+        <button class="key" data-value="9">9</button>
+        <button class="key operator" data-value="*">×</button>
+
+        <button class="key" data-value="4">4</button>
+        <button class="key" data-value="5">5</button>
+        <button class="key" data-value="6">6</button>
+        <button class="key operator" data-value="-">−</button>
+
+        <button class="key" data-value="1">1</button>
+        <button class="key" data-value="2">2</button>
+        <button class="key" data-value="3">3</button>
+        <button class="key operator" data-value="+">+</button>
+
+        <button class="key zero" data-value="0">0</button>
+        <button class="key" data-value=".">.</button>
+        <button class="key equals" data-action="equals">=</button>
+      </div>
+    </div>
+  </main>
+
+  <main id="vaultScreen" class="screen hidden">
+    <header class="vault-header">
+      <button id="backBtn">←</button>
+      <div>
+        <h2>My Vault</h2>
+        <small id="folderPath">My files</small>
+      </div>
+      <button id="addFolderBtn">＋ Folder</button>
+    </header>
+
+    <div class="vault-actions">
+      <button id="uploadBtn">＋ Add files</button>
+      <input id="fileInput" type="file" accept="image/*,video/*" multiple hidden>
+    </div>
+
+    <div id="vaultMessage" class="message"></div>
+    <section id="fileList" class="file-list"></section>
+  </main>
+
+  <dialog id="settingsDialog">
+    <h2>Settings</h2>
+    <button id="changePinBtn">Change calculator PIN</button>
+    <button id="signOutBtn" class="danger">Sign out</button>
+    <button id="closeSettingsBtn" class="secondary">Close</button>
+  </dialog>
+
+  <dialog id="previewDialog">
+    <div class="preview-header">
+      <strong id="previewName"></strong>
+      <button id="closePreviewBtn">✕</button>
+    </div>
+    <div id="previewContent"></div>
+  </dialog>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/13.2.0/math.min.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
