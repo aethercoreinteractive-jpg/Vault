@@ -1,5 +1,5 @@
 /* ==========================================
-   CALCULATOR VAULT
+   CALCULATR VAULT
    Supabase Authentication + Cloud PIN
    Private File Vault
 ========================================== */
