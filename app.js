@@ -16,6 +16,7 @@ const db = window.supabase.createClient(
 const $ = id => document.getElementById(id);
 
 let user = null;
+let activeVaultTab = "albums"; // "albums" | "all_media"
 let currentFolder = null;
 let currentFolderObj = null;
 let folderStack = [];
@@ -24,14 +25,18 @@ let allFilesCache = [];
 let currentFolderMedia = [];
 let activeViewerIndex = -1;
 
+// Target folder for "+" upload button
+let uploadTargetFolderId = null;
+
 // Multi-select state (long-press triggered)
 let selectionMode = false;
 let selectedFileIds = new Set();
 
-// Interactive vault move mode state ("Move here" / "Discard")
+// Interactive album move mode state ("Move here" / "Discard")
 let pendingMoveFileIds = null;
 let pendingMoveReturnFolder = null;
 let pendingMoveReturnStack = null;
+let pendingMoveReturnTab = "albums";
 
 let calculatorValue = "";
 let pinMode = "setup";
@@ -57,6 +62,7 @@ function syncHistoryStack() {
 
   const state = {
     screen: activeScreenId,
+    tab: activeVaultTab,
     folderId: currentFolder,
     folderDepth: folderStack.length,
     viewerOpen: Boolean($("previewDialog")?.open),
@@ -93,7 +99,7 @@ window.addEventListener("popstate", async () => {
 
     if (activeScreenId === "vaultScreen") {
       if (pendingMoveFileIds) {
-        discardMoveMode();
+        await discardMoveMode();
         return;
       }
 
@@ -102,16 +108,18 @@ window.addEventListener("popstate", async () => {
         return;
       }
 
-      if (folderStack.length > 0) {
-        currentFolder = folderStack.pop();
-        await loadVault();
-        return;
-      }
+      if (activeVaultTab === "albums") {
+        if (folderStack.length > 0) {
+          currentFolder = folderStack.pop();
+          await loadVault();
+          return;
+        }
 
-      if (currentFolder !== null) {
-        currentFolder = null;
-        await loadVault();
-        return;
+        if (currentFolder !== null) {
+          currentFolder = null;
+          await loadVault();
+          return;
+        }
       }
 
       showCalculator();
@@ -133,6 +141,44 @@ window.addEventListener("popstate", async () => {
   } finally {
     handlingPopState = false;
   }
+});
+
+/* ==========================================
+   FLOATING TABS (ALL MEDIA / ALBUMS)
+========================================== */
+
+function syncTabButtonsUI() {
+  const allBtn = $("tabAllMediaBtn");
+  const albBtn = $("tabAlbumsBtn");
+  const isAll = activeVaultTab === "all_media";
+
+  if (allBtn) {
+    allBtn.classList.toggle("is-active", isAll);
+    allBtn.setAttribute("aria-pressed", String(isAll));
+  }
+  if (albBtn) {
+    albBtn.classList.toggle("is-active", !isAll);
+    albBtn.setAttribute("aria-pressed", String(!isAll));
+  }
+}
+
+$("tabAllMediaBtn")?.addEventListener("click", async () => {
+  if (pendingMoveFileIds) return;
+  closeFolderMoreMenu();
+  exitSelectionMode();
+  activeVaultTab = "all_media";
+  syncTabButtonsUI();
+  syncHistoryStack();
+  await loadVault();
+});
+
+$("tabAlbumsBtn")?.addEventListener("click", async () => {
+  closeFolderMoreMenu();
+  exitSelectionMode();
+  activeVaultTab = "albums";
+  syncTabButtonsUI();
+  syncHistoryStack();
+  await loadVault();
 });
 
 /* ==========================================
@@ -434,6 +480,7 @@ function populateSettingsAccountInfo() {
 
 function resetClientSessionState() {
   user = null;
+  activeVaultTab = "albums";
   currentFolder = null;
   currentFolderObj = null;
   folderStack = [];
@@ -441,14 +488,17 @@ function resetClientSessionState() {
   allFilesCache = [];
   currentFolderMedia = [];
   activeViewerIndex = -1;
+  uploadTargetFolderId = null;
   selectionMode = false;
   selectedFileIds.clear();
   pendingMoveFileIds = null;
   pendingMoveReturnFolder = null;
   pendingMoveReturnStack = null;
+  pendingMoveReturnTab = "albums";
   currentPinForChange = "";
   firstPin = "";
   calculatorValue = "";
+  syncTabButtonsUI();
   if ($("fileList")) $("fileList").replaceChildren();
   if ($("email")) $("email").value = "";
   if ($("accountPassword")) $("accountPassword").value = "";
@@ -581,10 +631,10 @@ $("batchDeleteBtn")?.addEventListener("click", async () => {
 });
 
 /* ==========================================
-   INTERACTIVE VAULT MOVE MODE ("Move here" / "Discard")
+   INTERACTIVE ALBUMS MOVE MODE ("Move here" / "Discard")
 ========================================== */
 
-function startInteractiveMove(fileIds) {
+async function startInteractiveMove(fileIds) {
   if (!Array.isArray(fileIds) || fileIds.length === 0) return;
 
   if ($("previewDialog")?.open) {
@@ -597,22 +647,32 @@ function startInteractiveMove(fileIds) {
   pendingMoveFileIds = [...fileIds];
   pendingMoveReturnFolder = currentFolder;
   pendingMoveReturnStack = [...folderStack];
+  pendingMoveReturnTab = activeVaultTab;
 
+  activeVaultTab = "albums";
+  currentFolder = null;
+  folderStack = [];
+  syncTabButtonsUI();
   updateFolderModeUI(allFoldersCache);
-  showSnackbar("Navigate to any folder and tap \"Move here\", or tap \"Discard\".", 4500);
+  await loadVault();
+  showSnackbar("Pick an album and tap \"Move here\", or tap \"Discard\".", 4500);
 }
 
 async function discardMoveMode() {
   const returnFolder = pendingMoveReturnFolder;
   const returnStack = pendingMoveReturnStack ? [...pendingMoveReturnStack] : [];
+  const returnTab = pendingMoveReturnTab || "albums";
 
   pendingMoveFileIds = null;
   pendingMoveReturnFolder = null;
   pendingMoveReturnStack = null;
+  pendingMoveReturnTab = "albums";
 
+  activeVaultTab = returnTab;
   currentFolder = returnFolder;
   folderStack = returnStack;
 
+  syncTabButtonsUI();
   updateFolderModeUI(allFoldersCache);
   await loadVault();
   showSnackbar("Move discarded.");
@@ -625,6 +685,7 @@ async function confirmMoveHere() {
   const idsToMove = [...pendingMoveFileIds];
   const returnFolder = pendingMoveReturnFolder;
   const returnStack = pendingMoveReturnStack ? [...pendingMoveReturnStack] : [];
+  const returnTab = pendingMoveReturnTab || "albums";
 
   try {
     requireUser();
@@ -640,14 +701,17 @@ async function confirmMoveHere() {
     pendingMoveFileIds = null;
     pendingMoveReturnFolder = null;
     pendingMoveReturnStack = null;
+    pendingMoveReturnTab = "albums";
 
+    activeVaultTab = returnTab;
     currentFolder = returnFolder;
     folderStack = returnStack;
 
+    syncTabButtonsUI();
     await loadVault();
 
     const destFolder = allFoldersCache.find(f => f.id === destFolderId);
-    const destName = destFolder ? destFolder.name : "My files";
+    const destName = destFolder ? destFolder.name : "Albums";
     showSnackbar(`Moved ${idsToMove.length} item(s) to "${destName}".`);
   } catch (error) {
     showError("vaultMessage", error);
@@ -1006,12 +1070,14 @@ async function unlockVault(pin) {
     await verifyCloudPin(pin);
     setLaunchOverlay(true, 45, "PIN verified. Preparing vault & card previews...", "Preparing Vault");
 
+    activeVaultTab = "albums";
     currentFolder = null;
     currentFolderObj = null;
     folderStack = [];
     selectionMode = false;
     selectedFileIds.clear();
     pendingMoveFileIds = null;
+    syncTabButtonsUI();
     populateSettingsAccountInfo();
 
     await loadVault({
@@ -1035,16 +1101,29 @@ async function unlockVault(pin) {
 }
 
 /* ==========================================
-   FOLDER NAVIGATION & FULL-SCREEN MODE
+   FOLDER NAVIGATION & PLUS UPLOAD
 ========================================== */
 
 async function enterFolder(folderId) {
   closeFolderMoreMenu();
+  activeVaultTab = "albums";
+  syncTabButtonsUI();
   folderStack.push(currentFolder);
   currentFolder = folderId;
   syncHistoryStack();
   await loadVault();
 }
+
+function triggerFolderUpload(targetFolderId) {
+  uploadTargetFolderId = targetFolderId;
+  $("fileInput")?.click();
+}
+
+$("insideFolderPlusBtn")?.addEventListener("click", e => {
+  e.stopPropagation();
+  if (!currentFolder) return;
+  triggerFolderUpload(currentFolder);
+});
 
 $("backBtn").addEventListener("click", async () => {
   closeFolderMoreMenu();
@@ -1065,17 +1144,23 @@ $("backBtn").addEventListener("click", async () => {
     return;
   }
 
-  if (folderStack.length > 0) {
-    currentFolder = folderStack.pop();
-    syncHistoryStack();
-    await loadVault();
-  } else if (currentFolder !== null) {
-    currentFolder = null;
-    syncHistoryStack();
-    await loadVault();
-  } else {
-    showCalculator();
+  if (activeVaultTab === "albums") {
+    if (folderStack.length > 0) {
+      currentFolder = folderStack.pop();
+      syncHistoryStack();
+      await loadVault();
+      return;
+    }
+
+    if (currentFolder !== null) {
+      currentFolder = null;
+      syncHistoryStack();
+      await loadVault();
+      return;
+    }
   }
+
+  showCalculator();
 });
 
 $("addFolderBtn").addEventListener("click", async () => {
@@ -1083,7 +1168,7 @@ $("addFolderBtn").addEventListener("click", async () => {
   const name = await showPromptModal({
     eyebrow: "New Folder",
     title: "Create folder",
-    description: "Organize your private photos and videos inside a new folder.",
+    description: "Create a new album folder to organize your photos and videos.",
     placeholder: "Folder name",
     confirmText: "Create"
   });
@@ -1151,20 +1236,21 @@ function collectDescendantFolderIds(rootFolderId, folders) {
   return ids;
 }
 
-function findLatestVideoInFolderTree(targetFolderId, allFolders, allFiles) {
+// Top-placed image in the folder (files are ordered created_at desc)
+function findTopImageInFolderTree(targetFolderId, allFolders, allFiles) {
   const folderIds = collectDescendantFolderIds(targetFolderId, allFolders);
 
-  const videos = (allFiles || []).filter(
-    file => file.folder_id && folderIds.has(file.folder_id) && detectMediaKind(file) === "video"
+  const images = (allFiles || []).filter(
+    file => file.folder_id && folderIds.has(file.folder_id) && detectMediaKind(file) === "image"
   );
 
-  return videos.length > 0 ? videos[0] : null;
+  return images.length > 0 ? images[0] : null;
 }
 
-function loadAndDecodeImage(url, altText) {
+function loadAndDecodeImage(url, altText, className = "gallery-media") {
   return new Promise((resolve, reject) => {
     const img = document.createElement("img");
-    img.className = "gallery-media";
+    img.className = className;
     img.alt = altText || "Vault image";
     img.decoding = "async";
 
@@ -1242,7 +1328,7 @@ async function getSignedUrlForFile(file) {
 }
 
 function getFolderBreadcrumbLabel(folderId, folders) {
-  if (!folderId) return "My files";
+  if (!folderId) return "Albums";
   const byId = new Map((folders || []).map(f => [f.id, f]));
   const parts = [];
   let cur = folderId;
@@ -1254,26 +1340,27 @@ function getFolderBreadcrumbLabel(folderId, folders) {
     parts.unshift(f.name);
     cur = f.parent_id;
   }
-  return parts.length ? parts.join(" / ") : "My files";
+  return parts.length ? parts.join(" / ") : "Albums";
 }
 
 function updateFolderModeUI(folders) {
   const wrapper = $("vaultWrapper");
   const folderMenuWrap = $("folderMenuWrap");
-  const activeLabel = $("activeFolderLabel");
+  const plusBtn = $("insideFolderPlusBtn");
   const screenTitle = $("vaultScreenTitle");
   const folderPath = $("folderPath");
   const addFolderBtn = $("addFolderBtn");
   const sectionTitle = $("gallerySectionTitle");
   const moveBar = $("moveModeBar");
   const moveSummary = $("moveModeSummary");
-  const uploadBtn = $("uploadBtn");
+  const tabsBar = $("floatingTabsBar");
 
   currentFolderObj = currentFolder
     ? (folders || []).find(f => f.id === currentFolder) || null
     : null;
 
-  const insideFolder = Boolean(currentFolder && currentFolderObj);
+  const isAllMediaTab = activeVaultTab === "all_media";
+  const insideFolder = !isAllMediaTab && Boolean(currentFolder && currentFolderObj);
   const inMoveMode = Boolean(pendingMoveFileIds && pendingMoveFileIds.length > 0);
 
   if (wrapper) {
@@ -1284,32 +1371,40 @@ function updateFolderModeUI(folders) {
     folderMenuWrap.classList.toggle("hidden", !insideFolder || inMoveMode);
   }
 
-  if (addFolderBtn) {
-    addFolderBtn.classList.toggle("hidden", insideFolder || inMoveMode);
+  if (plusBtn) {
+    plusBtn.classList.toggle("hidden", !insideFolder || inMoveMode);
   }
 
-  if (uploadBtn) {
-    uploadBtn.classList.toggle("hidden", inMoveMode);
+  // Keep Folder button visible on top right in Albums view (and not inside an opened folder or move mode)
+  if (addFolderBtn) {
+    addFolderBtn.classList.toggle("hidden", isAllMediaTab || insideFolder || inMoveMode);
   }
 
   if (moveBar) {
     moveBar.classList.toggle("hidden", !inMoveMode);
   }
 
+  if (tabsBar) {
+    tabsBar.classList.toggle("hidden", inMoveMode);
+  }
+
   if (inMoveMode && moveSummary) {
-    const destName = currentFolderObj ? currentFolderObj.name : "My files";
+    const destName = currentFolderObj ? currentFolderObj.name : "Albums";
     moveSummary.textContent = `Moving ${pendingMoveFileIds.length} item(s) → ${destName}`;
   }
 
-  if (insideFolder) {
+  if (isAllMediaTab) {
+    if (screenTitle) screenTitle.textContent = "All Media";
+    if (folderPath) folderPath.textContent = "All uploaded photos & videos";
+    if (sectionTitle) sectionTitle.textContent = "All Media";
+  } else if (insideFolder) {
     if (screenTitle) screenTitle.textContent = currentFolderObj.name;
     if (folderPath) folderPath.textContent = getFolderBreadcrumbLabel(currentFolderObj.id, folders);
-    if (activeLabel) activeLabel.textContent = currentFolderObj.name;
-    if (sectionTitle) sectionTitle.textContent = "Folder Contents";
+    if (sectionTitle) sectionTitle.textContent = currentFolderObj.name;
   } else {
     if (screenTitle) screenTitle.textContent = "My Vault";
-    if (folderPath) folderPath.textContent = "My files";
-    if (sectionTitle) sectionTitle.textContent = "Gallery & Folders";
+    if (folderPath) folderPath.textContent = "Albums";
+    if (sectionTitle) sectionTitle.textContent = "Albums";
   }
 }
 
@@ -1318,9 +1413,10 @@ async function loadVault(options = {}) {
 
   try {
     requireUser();
+    syncTabButtonsUI();
 
     showMessage("vaultMessage", "Loading your files...");
-    if (onProgress) onProgress(52, "Fetching folders and media index...");
+    if (onProgress) onProgress(52, "Fetching albums and media index...");
 
     const { data: folders, error: folderError } = await db
       .from("vault_folders")
@@ -1343,13 +1439,15 @@ async function loadVault(options = {}) {
 
     updateFolderModeUI(allFoldersCache);
 
-    const folderItems = allFoldersCache.filter(
-      folder => folder.parent_id === currentFolder
-    );
+    const isAllMediaTab = activeVaultTab === "all_media";
 
-    const fileItems = allFilesCache.filter(
-      file => file.folder_id === currentFolder
-    );
+    const folderItems = isAllMediaTab
+      ? []
+      : allFoldersCache.filter(folder => folder.parent_id === currentFolder);
+
+    const fileItems = isAllMediaTab
+      ? allFilesCache
+      : allFilesCache.filter(file => file.folder_id === currentFolder);
 
     currentFolderMedia = fileItems;
 
@@ -1368,27 +1466,42 @@ async function loadVault(options = {}) {
       const thumb = document.createElement("div");
       thumb.className = "folder-thumb";
 
-      const latestVideo = findLatestVideoInFolderTree(folder.id, allFoldersCache, allFilesCache);
+      // Display top-placed image inside folder as thumbnail picture
+      const topImage = findTopImageInFolderTree(folder.id, allFoldersCache, allFilesCache);
 
-      if (latestVideo) {
+      if (topImage) {
         try {
-          const vidUrl = await getSignedUrlForFile(latestVideo);
-          const vidEl = await loadVideoFrame(vidUrl, "folder-video-thumb");
-          thumb.append(vidEl);
-
-          const tag = document.createElement("span");
-          tag.className = "folder-video-tag";
-          tag.textContent = "▶";
-          thumb.append(tag);
-        } catch (vidErr) {
-          console.error("Folder video thumbnail error:", vidErr);
+          const imgUrl = await getSignedUrlForFile(topImage);
+          const imgEl = await loadAndDecodeImage(imgUrl, folder.name, "folder-cover-img");
+          thumb.append(imgEl);
+        } catch (imgErr) {
+          console.error("Folder cover image error:", imgErr);
           thumb.textContent = "📁";
           if (requireAllCardsReady) {
-            failedCards.push(`${folder.name}: ${vidErr?.message || "Video preview failed"}`);
+            failedCards.push(`${folder.name}: ${imgErr?.message || "Cover image failed"}`);
           }
         }
       } else {
         thumb.textContent = "📁";
+      }
+
+      // Plus-only icon button on folder card (no text label)
+      if (!pendingMoveFileIds) {
+        const cardPlusBtn = document.createElement("button");
+        cardPlusBtn.type = "button";
+        cardPlusBtn.className = "folder-plus-badge";
+        cardPlusBtn.setAttribute("aria-label", "Add");
+        cardPlusBtn.innerHTML = `
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        `;
+        cardPlusBtn.addEventListener("click", e => {
+          e.stopPropagation();
+          triggerFolderUpload(folder.id);
+        });
+        thumb.append(cardPlusBtn);
       }
 
       const title = document.createElement("div");
@@ -1447,7 +1560,6 @@ async function loadVault(options = {}) {
         card.append(badge);
       }
 
-      // Long-press (~450ms) triggers selection mode
       let pressTimer = null;
       let longPressTriggered = false;
 
@@ -1516,7 +1628,7 @@ async function loadVault(options = {}) {
         const signedUrl = await getSignedUrlForFile(file);
         const mediaEl = isVideo
           ? await loadVideoFrame(signedUrl, "gallery-media")
-          : await loadAndDecodeImage(signedUrl, file.file_name);
+          : await loadAndDecodeImage(signedUrl, file.file_name, "gallery-media");
 
         fallback.remove();
         card.prepend(mediaEl);
@@ -1531,14 +1643,19 @@ async function loadVault(options = {}) {
     if (!folderItems.length && !fileItems.length) {
       const empty = document.createElement("div");
       empty.className = "empty-state";
+      const subText = pendingMoveFileIds
+        ? "Tap Move here above to place items in this album."
+        : isAllMediaTab
+          ? "No photos or videos uploaded yet."
+          : "Tap + above to add photos or videos to this album.";
       empty.innerHTML = `
         <div class="empty-icon-wrap" aria-hidden="true">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
           </svg>
         </div>
-        <div class="font-semibold text-sm text-[var(--text)]">This folder is empty</div>
-        <div class="text-xs mt-1">${pendingMoveFileIds ? "Tap Move here above to place items in this folder." : "Tap Add Files above to store photos or videos here."}</div>
+        <div class="font-semibold text-sm text-[var(--text)]">Nothing here yet</div>
+        <div class="text-xs mt-1">${subText}</div>
       `;
       fragment.append(empty);
     }
@@ -1567,12 +1684,10 @@ async function loadVault(options = {}) {
    FILE UPLOAD
 ========================================== */
 
-$("uploadBtn").addEventListener("click", () => {
-  $("fileInput").click();
-});
-
 $("fileInput").addEventListener("change", async event => {
   const selectedFiles = [...event.target.files];
+  const destinationFolder = uploadTargetFolderId !== undefined ? uploadTargetFolderId : currentFolder;
+  uploadTargetFolderId = currentFolder;
 
   if (!selectedFiles.length) return;
 
@@ -1620,7 +1735,7 @@ $("fileInput").addEventListener("change", async event => {
         .from("vault_files")
         .insert({
           user_id: user.id,
-          folder_id: currentFolder,
+          folder_id: destinationFolder,
           file_name: file.name,
           object_path: objectPath,
           mime_type: file.type,
@@ -1827,10 +1942,10 @@ $("viewerRenameBtn").addEventListener("click", async () => {
   await renameFile(file, true);
 });
 
-$("viewerMoveBtn")?.addEventListener("click", () => {
+$("viewerMoveBtn")?.addEventListener("click", async () => {
   const file = currentFolderMedia[activeViewerIndex];
   if (!file) return;
-  startInteractiveMove([file.id]);
+  await startInteractiveMove([file.id]);
 });
 
 $("viewerDeleteBtn").addEventListener("click", async () => {
