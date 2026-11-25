@@ -224,28 +224,6 @@
       background: var(--surface-high);
     }
 
-    .plus-only-btn {
-      width: 42px;
-      height: 42px;
-      min-width: 42px;
-      border-radius: var(--radius-full);
-      border: 0;
-      background: var(--accent-action);
-      color: #0B0D10;
-      display: grid;
-      place-items: center;
-      box-shadow: 0 6px 18px rgba(216, 148, 34, 0.28);
-      transition: transform 0.12s cubic-bezier(0.2, 0, 0, 1), background-color 0.14s ease;
-    }
-
-    .plus-only-btn:hover {
-      background: var(--accent-action-hover);
-    }
-
-    .plus-only-btn:active {
-      transform: scale(0.94);
-    }
-
     .solid-danger-btn {
       min-height: 50px;
       width: 100%;
@@ -271,7 +249,7 @@
       overflow-wrap: anywhere;
     }
 
-    /* MULTI-BILLION DOLLAR VAULT LAUNCH OVERLAY */
+    /* VAULT LAUNCH OVERLAY */
     .vault-launch-overlay {
       position: fixed;
       inset: 0;
@@ -846,7 +824,7 @@
       gap: 10px;
     }
 
-    /* Folder Card: Top-Placed Image Thumbnail + Full Folder Name Only */
+    /* Folder Card: Clean Top-Placed Image Thumbnail + Folder Name (No Overlay) */
     .folder-card {
       position: relative;
       min-width: 0;
@@ -889,22 +867,6 @@
       pointer-events: none;
     }
 
-    .folder-plus-badge {
-      position: absolute;
-      bottom: 6px;
-      right: 6px;
-      width: 28px;
-      height: 28px;
-      border-radius: var(--radius-full);
-      border: 0;
-      background: var(--accent-action);
-      color: #0B0D10;
-      display: grid;
-      place-items: center;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-      z-index: 3;
-    }
-
     .folder-title {
       font-size: 12.5px;
       font-weight: 600;
@@ -913,6 +875,30 @@
       overflow-wrap: anywhere;
       word-break: break-word;
       text-align: center;
+    }
+
+    /* Square Media-Sized Plus Card Placed Before First Image */
+    .add-media-slot-card {
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      padding: 0;
+      border-radius: var(--radius-md);
+      background: var(--surface-container);
+      border: 1.5px dashed rgba(242, 190, 92, 0.45);
+      color: var(--primary);
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      transition: transform 0.12s cubic-bezier(0.2, 0, 0, 1), background-color 0.14s ease, border-color 0.14s ease;
+    }
+
+    .add-media-slot-card:hover {
+      background: var(--surface-high);
+      border-color: var(--primary);
+    }
+
+    .add-media-slot-card:active {
+      transform: scale(0.96);
     }
 
     /* Media Card in Grid */
@@ -1176,6 +1162,10 @@
       grid-template-columns: 1fr 1fr;
       gap: 10px;
       margin-top: 20px;
+    }
+
+    .modal-actions.three-col {
+      grid-template-columns: 1fr;
     }
 
     .m3-snackbar {
@@ -1492,14 +1482,6 @@
           </div>
 
           <div class="flex items-center gap-2 shrink-0">
-            <!-- Plus-only icon inside folder (no label) -->
-            <button id="insideFolderPlusBtn" type="button" class="plus-only-btn hidden" aria-label="Add media">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
-            </button>
-
             <button id="addFolderBtn" type="button" class="secondary-btn" style="min-height:42px;padding:0 14px;font-size:13.5px;">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
@@ -1765,7 +1747,7 @@
   </dialog>
 
 
-  <!-- INBUILT WEBSITE CONFIRM / PROMPT MODAL -->
+  <!-- INBUILT WEBSITE CONFIRM / PROMPT / EXIT MODAL -->
   <dialog id="appModalDialog">
     <div class="dialog-inner">
       <div id="appModalEyebrow" class="m3-eyebrow">Action</div>
@@ -1781,7 +1763,7 @@
         >
       </div>
 
-      <div class="modal-actions">
+      <div id="appModalActions" class="modal-actions">
         <button id="appModalCancelBtn" type="button" class="secondary-btn">Cancel</button>
         <button id="appModalConfirmBtn" type="button" class="primary-btn">Confirm</button>
       </div>
